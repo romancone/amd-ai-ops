@@ -47,11 +47,12 @@
   under `host_vars/` ignored by Git.
 - Set the default SSH user to `ubuntu` in `group_vars/all.yml`.
 - Keep AMD hardware and package settings in `group_vars/amd_hosts.yml` and target
-  `amd_hosts`; put host-specific values and one-time migration lists in host variables.
-- Roles must not contain node names or a built-in legacy cleanup list.
+  `amd_hosts`; put host-specific values in ignored host variables.
+- Roles must not contain node names or host-specific package cleanup.
 - Run Ansible from the repository root and include `--diff` in every
   `ansible-playbook` example or instruction.
-- Run local contract tests and playbook syntax/inventory checks before delivery.
+- Keep validation in Ansible and use local playbook syntax/inventory checks.
+- Do not add tests, embedded scripts, or recipe-rewriting helper scripts.
 
 ## Compatibility and Verification
 
@@ -61,8 +62,8 @@
 - A shared GFX target does not establish RX 6900 XT product or framework support.
 - Require evidence before adding architecture overrides, driver replacements,
   or global library-path changes; document any necessary workaround.
-- Preserve essential legacy-package version and transaction checks in the manual
-  path. Cleanup must stay scoped to the reviewed packages.
+- Keep package installation free of removals and driver replacements. Resolve
+  existing installation conflicts separately.
 - Report reboot requirements; do not reboot automatically.
 - A successful package installation is not GPU or workload validation.
 

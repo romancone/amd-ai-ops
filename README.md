@@ -1,113 +1,114 @@
 # AMD AI Ops
 
-AMD GPU infrastructure recipes for Ubuntu AI hosts, starting with the Radeon
-RX 6900 XT.
+Public AMD GPU recipes for Ubuntu AI hosts. The RX 6900 XT is our verification card.
+Each recipe pairs readable Markdown commands with reusable Ansible roles.
 
-This repository keeps two forms of the same operational knowledge:
+## Recipes
 
-- Ansible roles for repeatable, idempotent deployment.
-- Markdown recipes for humans who want to read, review, and run the same steps manually.
-
-The Markdown files work with Runme or terminal copy/paste. They keep installation
-commands and essential safeguards concise; Ansible provides complete validation,
-runtime checks, and check-mode handling.
-
-## Current Recipes
-
-| Recipe | Human doc | Automation | Status |
+| Recipe | Manual / Runme notebook | Ansible | Status |
 |---|---|---|---|
-| Ubuntu ROCm with the distribution AMDGPU driver | [rocm.md](rocm.md) | [site.yml](site.yml) | Prepared; not deployed or GPU-validated |
+| RX 6900 XT / Ubuntu 26.04 ROCm development libraries | [rocm.md](rocm.md) | [site.yml](site.yml) | Prepared; not deployed or workload-validated |
 
-## Ansible Quick Start
+The recipe uses Ubuntu's `rocm-dev`, `rocminfo`, and the existing distribution
+`amdgpu` driver. See [Ubuntu's installation guidance](https://ubuntu.com/blog/amd-rocm-on-ubuntu).
 
-Run from the repository root. [ansible.cfg](ansible.cfg) selects the single local
-inventory:
+## Ansible
 
-```ini
-[defaults]
-inventory = ./hosts
-```
-
-On a new checkout, create the local inventory from the example:
+Run from the repository root. [ansible.cfg](ansible.cfg) selects `./hosts`.
+Create your local inventory:
 
 ```bash
 cp hosts.example.ini hosts
 vim hosts
 ```
 
-`hosts` and local files under `host_vars/` are gitignored. Keep real hostnames,
-connection details, and reviewed legacy-package migration settings there.
-[group_vars/all.yml](group_vars/all.yml) sets `ansible_user: ubuntu`; override it
-in `host_vars/<inventory_hostname>.yml` when needed:
+Real inventory and local `host_vars/` files are ignored. The default SSH user is
+`ubuntu`; override it in `host_vars/<inventory_hostname>.yml` if needed:
 
 ```yaml
 ansible_user: your_ssh_user
 ```
 
-AMD hardware and package settings live in
-[group_vars/amd_hosts.yml](group_vars/amd_hosts.yml). The initial profile is Ubuntu
-26.04 x86_64 and RX 6900 XT (`1002:73bf`, `gfx1030`). The playbook preserves the
-distribution `amdgpu` driver, verifies discovery, reviews legacy cleanup, installs
-Ubuntu's `rocm-dev`, and runs a bounded HIP test. It installs no inference framework.
-
-After deployment authorization, start with discovery and review its result before
-the complete migration:
+[group_vars/amd_hosts.yml](group_vars/amd_hosts.yml) defines the Ubuntu release,
+ROCm architecture target, and package profile. The example uses `gfx1030` for
+the RX 6900 XT. Preview and apply:
 
 ```bash
-ansible-playbook site.yml --tags rocm_discovery --diff
+ansible-playbook site.yml --check --diff
 ansible-playbook site.yml --diff
 ```
 
-Both commands can change the target. See [rocm.md](rocm.md) for prerequisites,
-sudo requirements, check-mode limits, acceptance, and recovery.
+Ansible validates the OS, loaded driver, compute-user access, and proposed APT
+transaction. It installs discovery, requires the expected GPU agent, installs
+the development libraries, and reminds you to reboot manually. Check mode uses existing
+APT metadata and skips GPU enumeration and compiler execution. Existing package
+conflicts must be resolved separately. See the guide for target prerequisites;
+add `--ask-become-pass` if sudo requires a password.
 
-Local validation needs no target connection:
+Local syntax and inventory checks require no target connection:
 
 ```bash
 ansible-playbook site.yml --syntax-check --diff
 ansible-playbook site.yml --list-hosts --diff
-python3 -m unittest discover -s tests -v
 ```
 
-## Human Recipe Quick Start
+## Manual / Runme Installation
 
-Open [rocm.md](rocm.md), review the settings, and run each numbered logical part
-in order on the target host. The three top-level sections match the playbook role
-order. Related commands share one shell block with concise operation comments.
-Use one Bash session, or a shared Runme shell session, to preserve variables.
+Open [rocm.md](rocm.md) with Runme in a VS Code session connected to the target
+Ubuntu host. Run cells 1.1–1.3 in order and review APT's proposal before accepting
+each installation. The same commands work in a terminal.
 
-## Recipe Alignment
+Every cell has an explicit Runme name. With the Runme CLI installed, discover
+the cells without executing them:
 
-Included manual operations use stable IDs matching Ansible task names, for example:
-
-```text
-amd.rocm.discovery.install
-amd.rocm.inspect.agents
-amd.rocm.legacy.remove
-amd.rocm.install
-amd.rocm.smoke.run
+```bash
+runme list --filename rocm.md
 ```
 
-The paths share settings, installation order, safeguards, and expected results:
+The notebook contains target-host operations only. Use the Ansible commands above
+on the controller as the alternative installation path.
 
-- manual recipes keep installation commands and final verification concise
-- Ansible roles include full validation, runtime checks, and check-mode handling
-- included operations map to Ansible tasks, including grouped commands;
-  validation-only tasks may remain Ansible-only
+## Manual and Ansible Step Map
 
-Both implementations are maintained directly. Stable IDs and offline contract
-tests support review; they do not prove full semantic equivalence or GPU compatibility.
+Both paths install or update `rocminfo` and `rocm-dev`, use the host's APT
+recommendation settings, and verify the `gfx1030` GPU and HIP compiler. Ansible
+uses `state: latest` to match `apt install`; neither path upgrades the whole system.
+If changing the profile in [group_vars/amd_hosts.yml](group_vars/amd_hosts.yml),
+update the manual package names and expected GPU target to match.
 
-## Compatibility and Validation Status
+| Manual / Runme part | Runme cell | Ansible operation in `roles/rocm/tasks/main.yml` |
+|---|---|---|
+| 1.1 Install discovery and verify GPU | `rocm-discovery` | `amd.rocm.cache.refresh`, `amd.rocm.discovery.install`, `amd.rocm.inspect.agents` |
+| 1.2 Install libraries and verify compiler | `rocm-development` | `amd.rocm.install`, `amd.rocm.compiler.verify` |
+| 1.3 Reboot | `rocm-reboot` | `amd.rocm.reboot.report` (manual reboot reminder) |
 
-The baseline uses Ubuntu's native `rocm-dev` and existing kernel driver.
-[Canonical documents this package path](https://ubuntu.com/blog/amd-rocm-on-ubuntu);
-[Ubuntu's release notes](https://documentation.ubuntu.com/release-notes/26.04/summary-for-lts-users/#the-amd-rocm-libraries-are-now-available)
-list the RX6900 family's `gfx1030` target with a blank CI-status cell.
+Stable `ops-step` comments identify the matching tasks beside each notebook cell.
+Ansible additionally validates OS, settings, driver and device access, and simulates
+APT changes before installing. The manual path requires its stated prerequisites
+and operator review of APT's proposal and `rocminfo` output. Ansible may reuse package
+metadata for up to one hour; the manual refresh always updates it.
 
-Package availability, vendor product support, and actual host validation remain
-separate. Deployment, HIP execution, application acceptance, and idempotence
-verification are pending.
+## Compatibility and Validation
+
+Official sources reviewed on 2026-10-20. Ubuntu 26.04 documents ROCm 7.1.0 in
+Universe. [Canonical recommends](https://ubuntu.com/blog/amd-rocm-on-ubuntu)
+`rocm-dev` for development libraries and headers; `rocm` provides the full suite.
+The [Ubuntu package](https://packages.ubuntu.com/resolute/rocm-dev) depends on
+`hipcc` and `rocminfo`. Installed versions follow Ubuntu archive updates.
+
+Ubuntu's [hardware notes](https://documentation.ubuntu.com/release-notes/26.04/summary-for-lts-users/#the-amd-rocm-libraries-are-now-available)
+list the RX6900 family's `gfx1030` target with no CI status shown.
+[AMD's current product matrix](https://rocm.docs.amd.com/en/latest/compatibility/compatibility-matrix.html)
+omits RX 6900 XT. Package availability does not establish vendor support or
+application compatibility. GPU execution, application acceptance, and an Ansible
+idempotence run remain pending.
+
+Keep Ubuntu's existing distribution driver and package sources for this recipe.
+Resolve third-party ROCm conflicts separately. Architecture overrides, driver
+replacements, and global library-path changes require workload evidence.
+AMD's [GPU access guidance](https://rocm.docs.amd.com/en/latest/install/rocm.html#configure-permissions-for-gpu-access)
+uses `render` and `video` group membership by default; establish permissions before
+starting and reconnect after group changes.
 
 ## Project Rules
 

@@ -4,8 +4,4 @@
   gather_facts: true
   become: false
   roles:
-    - role: amdgpu_preflight
-      tags: [always]
-    - role: rocm
-    - role: rocm_smoke_test
-      tags: [rocm_verify]
+    - rocm
