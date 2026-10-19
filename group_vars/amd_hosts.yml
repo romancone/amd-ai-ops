@@ -1,0 +1,8 @@
+---
+amdgpu_preflight_ubuntu_versions:
+  - "26.04"
+amdgpu_preflight_pci_id: "1002:73bf"
+rocm_expected_gfx_target: gfx1030
+rocm_profile_packages:
+  - rocm-dev
+rocm_smoke_test_gfx_target: "{{ rocm_expected_gfx_target }}"

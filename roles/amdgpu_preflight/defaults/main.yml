@@ -1,0 +1,4 @@
+---
+amdgpu_preflight_ubuntu_versions: []
+amdgpu_preflight_pci_id: ""
+amdgpu_preflight_compute_user: "{{ ansible_user }}"

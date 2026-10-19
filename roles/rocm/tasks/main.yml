@@ -1,0 +1,117 @@
+---
+- name: amd.rocm.settings.require | Require ROCm package and GPU settings
+  ansible.builtin.assert:
+    that:
+      - rocm_expected_gfx_target is match('^gfx[0-9a-f]+$')
+      - rocm_profile_packages | length > 0
+      - rocm_profile_packages | select('match', '^[a-z0-9][a-z0-9+.-]*$') | list | length == rocm_profile_packages | length
+      - rocm_legacy_packages | select('match', '^[a-z0-9][a-z0-9+.-]*$') | list | length == rocm_legacy_packages | length
+      - rocm_legacy_packages | length == 0 or rocm_legacy_version_pattern | length > 0
+    fail_msg: Configure the GPU target, Ubuntu package profile, and any explicit legacy migration.
+  tags: [always]
+
+- name: amd.rocm.cache.refresh | Refresh Ubuntu package metadata
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: "{{ rocm_cache_valid_time }}"
+    auto_install_module_deps: false
+  become: true
+  tags: [rocm_discovery]
+
+- name: amd.rocm.discovery.install | Install ROCm discovery without removals
+  ansible.builtin.apt:
+    name: rocminfo
+    state: present
+    install_recommends: true
+    fail_on_autoremove: true
+    force_apt_get: true
+    auto_install_module_deps: false
+  become: true
+  tags: [rocm_discovery]
+
+- name: amd.rocm.discovery.stat | Inspect the discovery executable
+  ansible.builtin.stat:
+    path: /usr/bin/rocminfo
+  register: rocm_discovery_executable
+  tags: [rocm_discovery]
+
+- name: amd.rocm.inspect.agents | Require the expected ROCm GPU agent
+  ansible.builtin.command:
+    argv: [/usr/bin/rocminfo]
+  environment:
+    LC_ALL: C
+  register: rocm_agents
+  changed_when: false
+  check_mode: false
+  failed_when: >-
+    rocm_agents.rc != 0 or
+    rocm_agents.stdout is not search('(?m)^\s*Name:\s+' ~ rocm_expected_gfx_target ~ '\s*$')
+  when: not ansible_check_mode or rocm_discovery_executable.stat.exists
+  tags: [rocm_discovery]
+
+- name: amd.rocm.discovery.pending | Report discovery deferred in check mode
+  ansible.builtin.debug:
+    msg: rocminfo is not installed; GPU agent verification is deferred until installation.
+  when: ansible_check_mode and not rocm_discovery_executable.stat.exists
+  tags: [rocm_discovery]
+
+- name: amd.rocm.packages.inspect | Inspect installed package versions
+  ansible.builtin.package_facts:
+    manager: apt
+
+- name: amd.rocm.legacy.validate | Require the expected legacy package versions
+  ansible.builtin.assert:
+    that:
+      - ansible_facts.packages[item][0].version is search(rocm_legacy_version_pattern)
+    fail_msg: "{{ item }} has an unreviewed version; do not remove it automatically."
+  loop: "{{ rocm_legacy_packages }}"
+  when: item in ansible_facts.packages
+
+- name: amd.rocm.transaction.inspect | Simulate the complete ROCm migration
+  ansible.builtin.command:
+    argv: >-
+      {{ ['apt-get', '--simulate', '-o', 'Debug::NoLocking=1',
+          '-o', 'APT::Install-Recommends=true', 'install']
+         + rocm_profile_packages
+         + (rocm_legacy_packages | intersect(ansible_facts.packages.keys() | list)
+            | sort | map('regex_replace', '$', '-') | list) }}
+  environment:
+    LC_ALL: C
+  register: rocm_transaction
+  changed_when: false
+  check_mode: false
+
+- ansible.builtin.import_tasks: validate_transaction.yml
+
+- name: amd.rocm.legacy.remove | Remove only the reviewed legacy packages
+  ansible.builtin.apt:
+    name: "{{ rocm_legacy_packages | intersect(ansible_facts.packages.keys() | list) | sort }}"
+    state: absent
+    purge: false
+    autoremove: false
+    force_apt_get: true
+    auto_install_module_deps: false
+  become: true
+  when: rocm_legacy_packages | intersect(ansible_facts.packages.keys() | list) | length > 0
+
+- name: amd.rocm.install | Install the Ubuntu ROCm development profile
+  ansible.builtin.apt:
+    name: "{{ rocm_profile_packages }}"
+    state: present
+    install_recommends: true
+    fail_on_autoremove: true
+    force_apt_get: true
+    auto_install_module_deps: false
+  become: true
+
+- name: amd.rocm.versions.report | Report installed ROCm package versions
+  ansible.builtin.command:
+    argv: "{{ ['dpkg-query', '-W', '-f=${binary:Package} ${Version}\\n', 'rocminfo', 'hipcc'] + rocm_profile_packages }}"
+  register: rocm_versions
+  changed_when: false
+  when: not ansible_check_mode
+
+- name: amd.rocm.versions.show | Show the installed package versions
+  ansible.builtin.debug:
+    var: rocm_versions.stdout_lines
+  when: not ansible_check_mode
