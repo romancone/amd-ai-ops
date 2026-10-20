@@ -1,5 +1,5 @@
 ---
-- name: Remove a reviewed legacy ROCm installation
+- name: Clean up selected ROCm packages and leftovers
   hosts: amd_hosts
   gather_facts: true
   become: false

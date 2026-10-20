@@ -1,0 +1,7 @@
+---
+- name: Download the model catalog and serve llama.cpp on the selected backend
+  hosts: amd_hosts
+  gather_facts: true
+  become: false
+  roles:
+    - llama

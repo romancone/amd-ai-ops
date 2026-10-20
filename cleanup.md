@@ -1,64 +1,71 @@
-# Legacy ROCm cleanup (Optional)
+# ROCm cleanup (Optional)
 
-Use this separate recipe when replacing a reviewed old ROCm installation.
-It pairs with [cleanup.yml](cleanup.yml); the base installation never runs it automatically.
-Only selected packages are purged. Ubuntu's GPU driver and Mesa stay installed.
-Package purge, reviewed leftover removal, Vulkan preservation and an unchanged
-second run have been verified on the RX 6900 XT host.
+Run steps 1.1–1.4 on the host to remove an old ROCm installation.
+For Ansible, use the separate example in section 1.5.
 
-## 1. Legacy ROCm cleanup
+## 1. ROCm cleanup
 
-Ansible role: [rocm_cleanup](roles/rocm_cleanup/).
-
-### 1.1 Select the old installation
-
-Record exact installed versions in ignored `host_vars/<inventory_hostname>.yml`.
-The example below describes a partial ROCm 7.2 installation for Ubuntu 24.04;
-change the selection to match the host. The role refuses version mismatches or
-APT removals outside the selection. Defaults select nothing.
-
-```yaml
-rocm_cleanup_packages:
-  rocm-core: 7.2.0.70200-43~24.04
-  roctracer: 4.1.70200.70200-43~24.04
-  hipblas-common-dev: 1.4.0.70200-43~24.04
-  hipblaslt: 1.2.1.70200-43~24.04
-  hipblaslt-dev: 1.2.1.70200-43~24.04
-rocm_cleanup_roots:
-  - /opt/rocm-7.2.0
-rocm_cleanup_files: []
-rocm_cleanup_verify_vulkan: true
-```
-
-For manual execution, inspect the same package versions and purge proposal first.
-Stop if a selected version differs or APT proposes other package changes.
+### 1.1 Find ROCm packages
 
 ```bash { name=rocm-cleanup-review interactive=true }
-dpkg-query -W rocm-core roctracer hipblas-common-dev hipblaslt hipblaslt-dev
-apt-get --simulate purge rocm-core roctracer hipblas-common-dev hipblaslt hipblaslt-dev
+# Match source packages, including libraries with lib-prefixed names.
+ROCM_SOURCES='^(rocm[^ ]*|roc(minfo|blas|fft|rand|solver|sparse|thrust|prim|dbgapi|tracer|alution)|'
+ROCM_SOURCES+='rocr-runtime|roct-thunk-interface|hip[^ ]*|hsa[^ ]*|miopen|rccl|comgr|amdsmi|pytorch-rocm|gloo-rocm) '
+export ROCM_PACKAGES=$(
+  dpkg-query -W -f='${source:Package} ${binary:Package} ${db:Status-Status}\n' |
+    grep -E ' (installed|config-files)$' |
+    grep -E "$ROCM_SOURCES" |
+    cut -d ' ' -f2
+)
+printf '%s\n' "$ROCM_PACKAGES"
 ```
 
-### 1.2 Remove the reviewed packages
+### 1.2 Preview and remove
+
+If the list is empty, skip removal. Check APT's proposal: only ROCm packages and
+dependent UCX, UCC or Open MPI packages should be removed.
+
+```bash { name=rocm-cleanup-preview interactive=true }
+apt-get --simulate purge $ROCM_PACKAGES
+```
 
 <!-- ops-step
 id: amd.cleanup.packages.remove
-ansible_task: amd.cleanup.packages.remove | Purge the reviewed legacy ROCm packages
+ansible_task: amd.cleanup.packages.remove | Purge the discovered ROCm packages
 kind: package
 -->
 
 ```bash { name=rocm-cleanup interactive=true }
-sudo apt purge rocm-core roctracer hipblas-common-dev hipblaslt hipblaslt-dev
+sudo apt purge $ROCM_PACKAGES
 ```
 
-Do not run a general autoremove. Inspect any leftover versioned directory before
-removing additional files. Add only reviewed unowned regular files to
-`rocm_cleanup_files`; the role rejects package-owned files and prunes only empty
-directories. It stops if other files remain. For manual cleanup, use `dpkg-query -S`
-to check each exact path before removing it with `sudo rm`, then remove empty
-parent directories with `sudo rmdir`. These correspond to `amd.cleanup.files.remove`
-and `amd.cleanup.directories.remove`; neither path deletes an unreviewed tree.
+Do not run `autoremove` or remove kernel, GPU driver or Mesa packages.
 
-### 1.3 Verify cleanup
+### 1.3 Verify package removal
+
+No selected package should have status `installed` or `config-files`.
+Missing-package messages are expected.
+
+```bash { name=rocm-cleanup-verify interactive=true }
+dpkg-query -W -f='${binary:Package}: ${db:Status-Status}\n' $ROCM_PACKAGES
+```
+
+If `vulkaninfo` is installed, check that it still lists your GPU:
+
+```bash { name=rocm-cleanup-vulkan interactive=true }
+vulkaninfo --summary
+```
+
+### 1.4 Check leftover directories (Optional)
+
+```bash { name=rocm-cleanup-directories interactive=true }
+find /opt -maxdepth 1 -name 'rocm*' -print
+```
+
+Inspect any old directory before deleting files. Run `dpkg-query -S /path/to/file`
+for each file; remove it with `sudo rm /path/to/file` only if no package owns it
+and you no longer need it. Use `sudo rmdir /path/to/directory` for empty directories.
+Do not delete a whole directory tree or follow the `/opt/rocm` symlink.
 
 <!-- ops-step
 id: amd.cleanup.roots.verify
@@ -66,13 +73,26 @@ ansible_task: amd.cleanup.roots.verify | Check for leftover legacy installation 
 kind: verify
 -->
 
-The selected packages and `/opt/rocm-7.2.0` should be absent. Missing-package and
-missing-directory messages are expected. Vulkan should still list the hardware GPU.
+Run `ls -ld /path/to/directory` for each directory you removed.
+`No such file or directory` confirms removal.
 
-```bash { name=rocm-cleanup-verify interactive=true }
-dpkg-query -W rocm-core roctracer hipblas-common-dev hipblaslt hipblaslt-dev
-ls -ld /opt/rocm-7.2.0
-vulkaninfo --summary
+Continue with [rocm.md](rocm.md) to install the new stack.
+
+### 1.5 Ansible alternative
+
+The role discovers installed ROCm packages and leftover package configuration.
+Preview the removal plan with `ansible-playbook cleanup.yml --check --diff`, then
+run `ansible-playbook cleanup.yml --diff`. No package list is required.
+
+Optional settings in `host_vars/<inventory_hostname>.yml`:
+
+```yaml
+rocm_cleanup_roots: []  # Optional: old /opt/rocm-X.Y.Z directories to check
+rocm_cleanup_files: []  # Optional: unwanted files inside those roots with no package owner
+rocm_cleanup_verify_vulkan: true  # Set false if vulkaninfo is not installed
 ```
 
-Continue with [rocm.md](rocm.md) after cleanup. This recipe does not install the new stack.
+Run [cleanup.yml](cleanup.yml) using the [README commands](README.md#ansible).
+APT may also need to remove ROCm-dependent UCX, UCC and Open MPI packages.
+The role rejects other unrelated removals and preserves the GPU driver and Vulkan.
+It deletes only listed unowned files and empty directories.

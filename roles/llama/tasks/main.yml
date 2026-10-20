@@ -1,0 +1,249 @@
+---
+- name: llama.settings.require | Validate build and service settings
+  ansible.builtin.assert:
+    that:
+      - ansible_facts.distribution == 'Ubuntu'
+      - ansible_facts.distribution_version == '26.04'
+      - ansible_facts.architecture == 'x86_64'
+      - ansible_facts.user_id != 'root'
+      - llama_backend in ['vulkan', 'hip']
+      - models is sequence and models is not string and models is not mapping
+      - llama_model is string
+      - models | selectattr('name', 'equalto', llama_model) | list | length == 1
+      - llama_flash_attention in ['on', 'off', 'auto']
+      - llama_cache_type_k in ['f16', 'q8_0', 'q4_0']
+      - llama_cache_type_v in ['f16', 'q8_0', 'q4_0']
+      - llama_cache_type_v == 'f16' or llama_flash_attention == 'on'
+      - llama_hip_arch is match('^gfx[0-9a-f]+$')
+      - llama_version is string and llama_version | length > 0
+      - llama_source_dir is match('^/opt/[A-Za-z0-9_.-]+$')
+      - llama_state_dir is match('^/var/lib/[A-Za-z0-9_.-]+$')
+      - llama_service_user is match('^[a-z_][a-z0-9_-]*$')
+      - llama_service_user != 'root'
+      - llama_build_jobs | int > 0
+      - llama_context | int >= 512
+      - llama_parallel | int > 0
+      - llama_context | int % llama_parallel | int == 0
+      - llama_port | int > 1024 and llama_port | int < 65536
+    fail_msg: Check the llama settings and select llama_model by name from the inventory models list.
+
+- name: llama.prerequisites.inspect | Read installed packages
+  ansible.builtin.package_facts:
+    manager: apt
+
+- name: llama.prerequisites.require | Require the base developer installation
+  ansible.builtin.assert:
+    that:
+      - "['build-essential', 'cmake', 'ninja-build', 'git', 'python3-venv', 'libssl-dev', 'libvulkan-dev', 'glslc', 'spirv-headers', 'mesa-vulkan-drivers', 'rocm-dev'] | difference(ansible_facts.packages.keys() | list) | length == 0"
+    fail_msg: Install and verify rocm.md / site.yml first.
+
+- name: llama.user.create | Create the service user with GPU access
+  ansible.builtin.user:
+    name: "{{ llama_service_user }}"
+    system: true
+    create_home: false
+    shell: /usr/sbin/nologin
+    groups: [render, video]
+    append: true
+  become: true
+
+- name: llama.state.prepare | Prepare the service cache directory
+  ansible.builtin.file:
+    path: "{{ llama_state_dir }}"
+    state: directory
+    owner: "{{ llama_service_user }}"
+    group: "{{ llama_service_user }}"
+    mode: '0755'
+  become: true
+  when: not ansible_check_mode
+
+- name: Install hf and download the model catalog
+  ansible.builtin.import_role:
+    name: model_store
+
+- name: Select the serving model
+  ansible.builtin.set_fact:
+    llama_model_config: "{{ models | selectattr('name', 'equalto', llama_model) | first }}"
+
+- name: Apply downloaded model changes
+  ansible.builtin.debug:
+    msg: Model files changed; restart the active service.
+  changed_when: true
+  when: model_store_changed | bool
+  notify: Restart llama
+
+- name: Prepare llama.cpp source and HIP patch
+  ansible.builtin.import_tasks: source.yml
+
+- name: llama.vulkan.configure | Configure the Vulkan build
+  ansible.builtin.command:
+    argv:
+      - cmake
+      - -S
+      - "{{ llama_source_dir }}"
+      - -B
+      - "{{ llama_source_dir }}/build-vulkan"
+      - -G
+      - Ninja
+      - -DCMAKE_BUILD_TYPE=Release
+      - -DGGML_VULKAN=ON
+      - -DGGML_VULKAN_CHECK_RESULTS=OFF
+  changed_when: false
+  when: not ansible_check_mode and llama_backend == 'vulkan'
+
+- name: llama.vulkan.build | Build the Vulkan binaries
+  ansible.builtin.command:
+    argv:
+      - cmake
+      - --build
+      - "{{ llama_source_dir }}/build-vulkan"
+      - --target
+      - llama-server
+      - llama-cli
+      - llama-bench
+      - -j
+      - "{{ llama_build_jobs | string }}"
+  register: llama_vulkan_build
+  changed_when: llama_vulkan_build.stdout is search('(?m)^\[[0-9]+/[0-9]+\] (Building|Linking) ')
+  notify: Restart llama
+  when: not ansible_check_mode and llama_backend == 'vulkan'
+
+- name: llama.compiler.locate | Locate the Ubuntu HIP compiler and runtime
+  ansible.builtin.command:
+    argv: [hipconfig, "{{ item }}"]
+  loop: ['-l', '-R']
+  register: llama_hip_paths
+  changed_when: false
+  check_mode: false
+  when: llama_backend == 'hip'
+
+- name: llama.hip.configure | Configure the HIP build
+  ansible.builtin.command:
+    argv:
+      - cmake
+      - -S
+      - "{{ llama_source_dir }}"
+      - -B
+      - "{{ llama_source_dir }}/build-hip"
+      - -G
+      - Ninja
+      - -DCMAKE_BUILD_TYPE=Release
+      - -DGGML_HIP=ON
+      - "-DAMDGPU_TARGETS={{ llama_hip_arch }}"
+  environment:
+    HIPCXX: "{{ llama_hip_paths.results[0].stdout | trim }}/clang"
+    HIP_PATH: "{{ llama_hip_paths.results[1].stdout | trim }}"
+  changed_when: false
+  when: not ansible_check_mode and llama_backend == 'hip'
+
+- name: llama.hip.build | Build the HIP binaries
+  ansible.builtin.command:
+    argv:
+      - cmake
+      - --build
+      - "{{ llama_source_dir }}/build-hip"
+      - --target
+      - llama-server
+      - llama-cli
+      - llama-bench
+      - -j
+      - "{{ llama_build_jobs | string }}"
+  register: llama_hip_build
+  changed_when: llama_hip_build.stdout is search('(?m)^\[[0-9]+/[0-9]+\] (Building|Linking) ')
+  notify: Restart llama
+  when: not ansible_check_mode and llama_backend == 'hip'
+
+- name: llama.backends.verify | Require a GPU in the selected build
+  ansible.builtin.command:
+    argv: ["{{ llama_source_dir }}/build-{{ llama_backend }}/bin/llama-server", --list-devices]
+  register: llama_devices
+  changed_when: false
+  failed_when: >-
+    llama_devices.rc != 0 or
+    llama_devices.stdout is not search(('Vulkan' if llama_backend == 'vulkan' else 'ROCm') ~ '[0-9]+:')
+  when: not ansible_check_mode
+
+- name: llama.systemd.write | Write the selected backend service
+  ansible.builtin.template:
+    src: llama.service.j2
+    dest: /etc/systemd/system/llama.service
+    owner: root
+    group: root
+    mode: '0644'
+  become: true
+  notify: Restart llama
+
+- name: llama.systemd.reload | Apply service changes
+  ansible.builtin.meta: flush_handlers
+
+- name: llama.systemd.start | Enable and start llama.cpp
+  ansible.builtin.systemd_service:
+    name: llama.service
+    daemon_reload: true
+    enabled: true
+    state: started
+  become: true
+  when: not ansible_check_mode
+
+- name: llama.health.verify | Wait for the model to load
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ llama_port }}/health"
+  register: llama_health
+  until: llama_health.status == 200
+  retries: 60
+  delay: 5
+  when: not ansible_check_mode
+
+- name: llama.models.verify | Verify the served model
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ llama_port }}/v1/models"
+  register: llama_models
+  failed_when: llama_models.status != 200 or llama_model not in (llama_models.json.data | map(attribute='id') | list)
+  when: not ansible_check_mode
+
+- name: llama.inference.verify | Verify text generation
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ llama_port }}/v1/chat/completions"
+    method: POST
+    body_format: json
+    body:
+      model: "{{ llama_model }}"
+      messages:
+        - role: user
+          content: Say hello in one short sentence.
+      temperature: 0
+      max_tokens: 32
+    timeout: 180
+  register: llama_inference
+  failed_when: >-
+    llama_inference.status != 200 or
+    (llama_inference.json.choices[0].message.content | default('') | trim | length) == 0
+  when: not ansible_check_mode
+
+- name: llama.inference.report | Report the backend and response
+  ansible.builtin.debug:
+    msg:
+      backend: "{{ llama_backend }}"
+      response: "{{ llama_inference.json.choices[0].message.content }}"
+      timings: "{{ llama_inference.json.timings | default({}) }}"
+  when: not ansible_check_mode
+
+- name: llama.service.inspect | Identify the current service invocation
+  ansible.builtin.command:
+    argv: [systemctl, show, llama.service, --property=InvocationID, --value]
+  register: llama_invocation
+  changed_when: false
+  when: not ansible_check_mode
+
+- name: llama.offload.verify | Require all model layers on the selected GPU backend
+  ansible.builtin.command:
+    argv: [journalctl, "_SYSTEMD_INVOCATION_ID={{ llama_invocation.stdout | trim }}", --no-pager, -o, cat]
+  register: llama_log
+  changed_when: false
+  failed_when: >-
+    llama_log.rc != 0 or
+    (llama_flash_attention == 'on' and llama_log.stdout is not search('flash_attn\s*=\s*enabled')) or
+    llama_log.stdout is not search('offloaded ([1-9][0-9]*)/\\1 layers to GPU') or
+    llama_log.stdout is not search(('Vulkan' if llama_backend == 'vulkan' else 'ROCm') ~ '[0-9]+.*model buffer size')
+  become: true
+  when: not ansible_check_mode

@@ -1,0 +1,4 @@
+---
+model_store_root: /opt/models
+model_store_hf_venv: /opt/huggingface
+models: []

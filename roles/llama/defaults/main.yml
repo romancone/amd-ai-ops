@@ -1,0 +1,15 @@
+---
+llama_version: HEAD
+llama_source_dir: /opt/llama.cpp
+llama_build_jobs: 8
+llama_backend: hip
+llama_model: ""
+llama_hip_arch: "{{ rocm_expected_gfx_target }}"
+llama_service_user: llama
+llama_state_dir: /var/lib/llama
+llama_port: 8080
+llama_context: 4096
+llama_flash_attention: "on"
+llama_cache_type_k: f16
+llama_cache_type_v: f16
+llama_parallel: 1

@@ -1,0 +1,78 @@
+---
+- name: llama.source.prepare | Prepare the source directory
+  ansible.builtin.file:
+    path: "{{ llama_source_dir }}"
+    state: directory
+    owner: "{{ ansible_facts.user_id }}"
+    mode: '0755'
+  become: true
+
+- name: Discover the current upstream llama.cpp commit
+  ansible.builtin.command:
+    argv: [git, ls-remote, https://github.com/ggml-org/llama.cpp.git, HEAD]
+  register: llama_upstream
+  changed_when: false
+  check_mode: false
+  failed_when: llama_upstream.rc != 0 or llama_upstream.stdout is not match('^[0-9a-f]{40}\s+HEAD$')
+  when: llama_version == 'HEAD'
+
+- name: Resolve the requested source revision
+  ansible.builtin.set_fact:
+    llama_target_revision: "{{ llama_upstream.stdout.split()[0] if llama_version == 'HEAD' else llama_version }}"
+
+- name: Read the existing source revision
+  ansible.builtin.command:
+    argv: [git, -C, "{{ llama_source_dir }}", rev-parse, HEAD]
+  register: llama_current_revision
+  changed_when: false
+  failed_when: llama_current_revision.rc not in [0, 128]
+  check_mode: false
+
+- name: Install the RDNA2 Flash Attention patch
+  ansible.builtin.copy:
+    src: hip-rdna2-flash-attention.patch
+    dest: "{{ llama_state_dir }}/hip-rdna2-flash-attention.patch"
+    mode: '0644'
+  become: true
+  when: not ansible_check_mode
+
+- name: Check whether the managed patch is already applied
+  ansible.builtin.command:
+    argv: [git, -C, "{{ llama_source_dir }}", apply, --reverse, --check, "{{ llama_state_dir }}/hip-rdna2-flash-attention.patch"]
+  register: llama_patch_applied
+  changed_when: false
+  failed_when: llama_patch_applied.rc not in [0, 1]
+  when: not ansible_check_mode and llama_current_revision.rc == 0
+
+- name: Remove only the managed patch before a source update
+  ansible.builtin.command:
+    argv: [git, -C, "{{ llama_source_dir }}", apply, --reverse, "{{ llama_state_dir }}/hip-rdna2-flash-attention.patch"]
+  when:
+    - not ansible_check_mode
+    - llama_patch_applied.rc | default(1) == 0
+    - llama_current_revision.stdout != llama_target_revision
+
+- name: Preview a source update
+  ansible.builtin.debug:
+    msg: "Source revision: {{ llama_current_revision.stdout | default('missing', true) }} -> {{ llama_target_revision }}"
+  changed_when: llama_current_revision.stdout != llama_target_revision
+  when: ansible_check_mode
+
+- name: llama.source.checkout | Check out llama.cpp
+  ansible.builtin.git:
+    repo: https://github.com/ggml-org/llama.cpp.git
+    dest: "{{ llama_source_dir }}"
+    version: "{{ llama_target_revision }}"
+    refspec: "{{ llama_upstream.stdout.split()[0] if llama_version == 'HEAD' else omit }}"
+    depth: 1
+  register: llama_source
+  when: not ansible_check_mode and llama_current_revision.stdout != llama_target_revision
+
+- name: llama.hip.patch | Apply the RDNA2 Flash Attention tile fix
+  ansible.builtin.command:
+    argv: [git, -C, "{{ llama_source_dir }}", apply, "{{ llama_state_dir }}/hip-rdna2-flash-attention.patch"]
+  when:
+    - not ansible_check_mode
+    - llama_backend == 'hip'
+    - llama_hip_arch is match('^gfx103[0-9a-f]$')
+    - llama_patch_applied.rc | default(1) != 0 or llama_source is changed

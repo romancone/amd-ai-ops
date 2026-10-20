@@ -1,36 +1,40 @@
 ---
-- name: amd.cleanup.settings.require | Require an explicit legacy package selection
+- name: amd.cleanup.settings.require | Validate cleanup settings
   ansible.builtin.assert:
     that:
       - ansible_facts.distribution == 'Ubuntu'
-      - rocm_cleanup_packages is mapping
-      - rocm_cleanup_packages | length > 0
-      - rocm_cleanup_packages.keys() | reject('match', '^[a-z0-9][a-z0-9+.-]*$') | list | length == 0
-      - rocm_cleanup_packages.keys() | select('match', '^(linux-|amdgpu-dkms|mesa-|libdrm|vulkan-)') | list | length == 0
-      - rocm_cleanup_packages.values() | select('string') | list | length == rocm_cleanup_packages | length
-      - rocm_cleanup_packages.values() | select('equalto', '') | list | length == 0
+      - rocm_cleanup_source_pattern is string
+      - rocm_cleanup_dependency_sources is sequence and rocm_cleanup_dependency_sources is not string
       - rocm_cleanup_roots is sequence and rocm_cleanup_roots is not string
       - rocm_cleanup_roots | reject('match', '^/opt/rocm-[0-9]+\.[0-9]+\.[0-9]+$') | list | length == 0
       - rocm_cleanup_files is sequence and rocm_cleanup_files is not string
-    fail_msg: Supply exact reviewed package versions and optional versioned /opt/rocm-X.Y.Z roots in inventory variables.
 
-- name: amd.cleanup.packages.inspect | Read installed package versions
-  ansible.builtin.package_facts:
-    manager: apt
+- name: amd.cleanup.packages.inspect | Discover ROCm packages and leftover configuration
+  ansible.builtin.command:
+    argv: [dpkg-query, -W, '-f=${binary:Package}\t${source:Package}\t${db:Status-Status}\n']
+  register: rocm_cleanup_package_status
+  changed_when: false
+  check_mode: false
 
-- name: amd.cleanup.versions.require | Protect packages whose versions have changed
-  ansible.builtin.assert:
-    that:
-      - ansible_facts.packages[item.key] | map(attribute='version') | difference([item.value]) | length == 0
-    fail_msg: An installed package differs from the reviewed legacy version; review the cleanup profile again.
-  loop: "{{ rocm_cleanup_packages | dict2items }}"
-  when: item.key in ansible_facts.packages
-
-- name: amd.cleanup.selection | Select installed legacy packages
+- name: amd.cleanup.metadata | Read package name, source and state
   ansible.builtin.set_fact:
-    rocm_cleanup_installed: "{{ rocm_cleanup_packages.keys() | intersect(ansible_facts.packages.keys()) | sort }}"
+    rocm_cleanup_inventory: >-
+      {{ rocm_cleanup_package_status.stdout
+         | regex_findall('(?m)^([^\t\n]+)\t([^\t\n]*)\t(installed|config-files)$') }}
 
-- name: amd.cleanup.transaction.inspect | Simulate the exact legacy package purge
+- name: amd.cleanup.selection | Select packages by their source metadata
+  ansible.builtin.set_fact:
+    rocm_cleanup_installed: >-
+      {{ rocm_cleanup_inventory
+         | selectattr('1', 'match', rocm_cleanup_source_pattern)
+         | map('first') | map('regex_replace', ':.*$', '') | unique | sort }}
+    rocm_cleanup_allowed_dependencies: >-
+      {{ rocm_cleanup_inventory
+         | selectattr('1', 'in', rocm_cleanup_dependency_sources)
+         | map('first') | map('regex_replace', ':.*$', '') | unique | sort }}
+    rocm_cleanup_removals: []
+
+- name: amd.cleanup.transaction.inspect | Preview the discovered ROCm package purge
   ansible.builtin.command:
     argv: "{{ ['apt-get', '--simulate', 'purge'] + rocm_cleanup_installed }}"
   environment:
@@ -41,34 +45,49 @@
   become: true
   when: rocm_cleanup_installed | length > 0
 
+- name: amd.cleanup.transaction.select | Record the proposed removals
+  ansible.builtin.set_fact:
+    rocm_cleanup_removals: >-
+      {{ rocm_cleanup_transaction.stdout | regex_findall('(?m)^(?:Remv|Purg) ([^\s:]+)') | unique | sort }}
+  when: rocm_cleanup_installed | length > 0
+
 - name: amd.cleanup.transaction.require | Reject unrelated package changes
   ansible.builtin.assert:
     that:
       - rocm_cleanup_transaction.stdout is not search('(?m)^Inst ')
-      - rocm_cleanup_transaction.stdout | regex_findall('(?m)^(?:Remv|Purg) ([^ :]+)') | difference(rocm_cleanup_packages.keys() | list) | length == 0
-    fail_msg: APT proposes changes outside the selected legacy packages; review them separately.
+      - rocm_cleanup_removals | difference(rocm_cleanup_installed + rocm_cleanup_allowed_dependencies) | length == 0
+      - rocm_cleanup_removals | select('match', '^(linux-|amdgpu|mesa-|libdrm|libvulkan|vulkan-)') | list | length == 0
+    fail_msg: APT proposes changes outside ROCm and its supported communication dependencies; no packages were removed.
   when: rocm_cleanup_installed | length > 0
 
-- name: amd.cleanup.packages.remove | Purge the reviewed legacy ROCm packages
+- name: amd.cleanup.packages.report | Show packages selected for removal
+  ansible.builtin.debug:
+    var: rocm_cleanup_removals
+
+- name: amd.cleanup.packages.remove | Purge the discovered ROCm packages
   ansible.builtin.apt:
-    name: "{{ rocm_cleanup_installed }}"
+    name: "{{ rocm_cleanup_removals }}"
     state: absent
     purge: true
     autoremove: false
     force_apt_get: true
     auto_install_module_deps: false
   become: true
-  when: rocm_cleanup_installed | length > 0
+  when: rocm_cleanup_removals | length > 0
 
-- name: amd.cleanup.packages.verify | Refresh installed package facts after cleanup
-  ansible.builtin.package_facts:
-    manager: apt
+- name: amd.cleanup.packages.verify | Check package status after cleanup
+  ansible.builtin.command:
+    argv: [dpkg-query, -W, '-f=${binary:Package}\t${db:Status-Status}\n']
+  register: rocm_cleanup_remaining
+  changed_when: false
   when: not ansible_check_mode
 
-- name: amd.cleanup.absent.require | Require legacy packages to be absent
+- name: amd.cleanup.absent.require | Require discovered packages and configuration to be absent
   ansible.builtin.assert:
     that:
-      - rocm_cleanup_packages.keys() | intersect(ansible_facts.packages.keys()) | length == 0
+      - >-
+        rocm_cleanup_removals | intersect(rocm_cleanup_remaining.stdout
+        | regex_findall('(?m)^([^:\t]+)(?::[^\t]+)?\t(?:installed|config-files)$')) | length == 0
   when: not ansible_check_mode
 
 - name: amd.cleanup.files.require | Require exact paths inside the selected legacy roots
@@ -153,7 +172,7 @@
 
 - name: amd.cleanup.report | Report cleanup scope
   ansible.builtin.debug:
-    msg: Selected legacy packages and unowned files are removed. Any remaining installation files require separate inspection.
+    msg: "{{ 'Cleanup preview complete; nothing was removed.' if ansible_check_mode else 'Selected packages and leftover files are absent.' }}"
 
 - name: amd.cleanup.vulkan.verify | Verify Vulkan hardware remains available
   ansible.builtin.command:

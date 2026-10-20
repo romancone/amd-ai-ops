@@ -1,5 +1,10 @@
 ---
-rocm_cleanup_packages: {}
+# Match ROCm source packages across Ubuntu and AMD package naming.
+rocm_cleanup_source_pattern: >-
+  (?x)^(?:rocm.*|roc(?:minfo|blas|fft|rand|solver|sparse|thrust|prim|dbgapi|tracer|alution)|
+  rocr-runtime|roct-thunk-interface|hip.*|hsa.*|miopen|rccl|comgr|amdsmi|pytorch-rocm|gloo-rocm)$
+# Remove these only when APT requires it to remove the ROCm runtime.
+rocm_cleanup_dependency_sources: [ucx, ucc, openmpi]
 rocm_cleanup_roots: []
 rocm_cleanup_files: []
 rocm_cleanup_verify_vulkan: false

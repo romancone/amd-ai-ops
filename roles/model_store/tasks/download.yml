@@ -1,0 +1,49 @@
+---
+- name: llama.model.prepare | Prepare a dedicated model directory
+  ansible.builtin.file:
+    path: "{{ model_store_root }}/{{ model.name }}"
+    state: directory
+    owner: "{{ ansible_facts.user_id }}"
+    mode: '0755'
+  become: true
+
+- name: Inspect the existing model checksum
+  ansible.builtin.stat:
+    path: "{{ model_store_root }}/{{ model.name }}/{{ model.file }}"
+    checksum_algorithm: sha256
+    get_checksum: "{{ model.sha256 is defined }}"
+  register: model_existing
+
+- name: llama.model.download | Download the model with hf
+  ansible.builtin.command:
+    argv: >-
+      {{ [model_store_hf_venv ~ '/bin/hf', 'download', model.repo, model.file,
+          '--local-dir', model_store_root ~ '/' ~ model.name]
+         + (['--revision', model.revision] if model.revision is defined else [])
+         + (['--force-download'] if model.sha256 is defined else []) }}
+  environment:
+    HF_XET_HIGH_PERFORMANCE: "1"
+  register: model_download
+  when:
+    - not ansible_check_mode
+    - >-
+      not model_existing.stat.exists or
+      (model.sha256 is defined and model_existing.stat.checksum | default('') != model.sha256)
+
+- name: Verify the downloaded model checksum
+  ansible.builtin.stat:
+    path: "{{ model_store_root }}/{{ model.name }}/{{ model.file }}"
+    checksum_algorithm: sha256
+  register: model_verified
+  failed_when: model_verified.stat.checksum | default('') != model.sha256
+  when: not ansible_check_mode and model.sha256 is defined
+
+- name: Make the model readable by the service
+  ansible.builtin.file:
+    path: "{{ model_store_root }}/{{ model.name }}/{{ model.file }}"
+    mode: '0644'
+  when: not ansible_check_mode
+
+- name: Record model changes
+  ansible.builtin.set_fact:
+    model_store_changed: "{{ model_store_changed or model_download is changed }}"

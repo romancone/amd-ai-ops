@@ -1,0 +1,54 @@
+---
+- name: Install Hugging Face CLI
+  tags: hf
+  block:
+    - name: Require a safe CLI environment path
+      ansible.builtin.assert:
+        that: model_store_hf_venv is match('^/opt/[A-Za-z0-9_.-]+$')
+
+    - name: Install hf in its own Python environment
+      ansible.builtin.pip:
+        name: huggingface_hub
+        virtualenv: "{{ model_store_hf_venv }}"
+        virtualenv_command: /usr/bin/python3 -m venv
+      become: true
+      when: not ansible_check_mode
+
+    - name: Make hf available on PATH
+      ansible.builtin.file:
+        src: "{{ model_store_hf_venv }}/bin/hf"
+        dest: /usr/local/bin/hf
+        state: link
+      become: true
+      when: not ansible_check_mode
+
+- name: Validate the model catalog
+  ansible.builtin.assert:
+    that:
+      - model_store_root is match('^/opt/[A-Za-z0-9_.-]+$')
+      - models is sequence and models is not string and models is not mapping
+      - models | map(attribute='name') | unique | length == models | length
+    fail_msg: Configure models as a list with unique names in inventory.
+
+- name: Validate model download settings
+  ansible.builtin.assert:
+    that:
+      - item.name is match('^[A-Za-z0-9][A-Za-z0-9_.-]*$')
+      - item.repo is match('^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$')
+      - item.revision is not defined or (item.revision is string and item.revision | length > 0)
+      - item.file is match('^[A-Za-z0-9][A-Za-z0-9_.-]*\.gguf$')
+      - item.sha256 is not defined or item.sha256 is match('^[0-9a-f]{64}$')
+  loop: "{{ models }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Initialize model change tracking
+  ansible.builtin.set_fact:
+    model_store_changed: false
+
+- name: Download the model catalog
+  ansible.builtin.include_tasks: download.yml
+  loop: "{{ models }}"
+  loop_control:
+    loop_var: model
+    label: "{{ model.name }}"

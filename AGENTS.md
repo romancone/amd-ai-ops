@@ -1,23 +1,59 @@
 # Project Rules
 
+## Scope and Review
+- Stay within the requested change. Do not add models, frameworks, benchmarks,
+  helper scripts or extra test repetitions without a request.
+- Treat review, tests, host changes, commits, pushes and merges as separate actions.
+  Respect explicit prohibitions across turns until the user changes them.
+  "No tests" includes syntax checks and benchmark reruns; use static inspection.
+- Keep review changes unstaged when requested. Inspect the current working diff;
+  do not mix it with previously committed or parked work.
+- Keep raw logs, JSON results, images and temporary evidence outside the repository.
+  Summarize requested evaluations in one short document and a comparison table.
+  Preserve earlier results and distinguish completed, failed and pending runs.
+
 ## Git
 
 - Use `codex/<topic>` feature branches for new work. If a branch change has not
   already been requested, propose its name for human confirmation before creating it.
 - Never commit or push without explicit human authorization.
+- Continue on the current branch when instructed; preserve unrelated pending work.
 - Keep commits reviewable and scoped to one feature or cleanup.
 
 ## Writing Style
 
-- Do not bloat comments or write reasoning and history into code comments.
-- Do not use ASCII decoration.
-- Public docs are for humans first: concise, practical, and current.
+- **Write in clean, simple language and keep it concise.** Apply this to every
+  guide section and user-facing explanation.
+- Manual recipes must be usable on their own: runnable commands with short comments.
+  Do not require Ansible inventory files to follow manual steps. Put Ansible
+  configuration in a separate, clearly labelled example.
+- Show the editable configuration example and its file path before commands that
+  depend on it. A description of the roles is not a substitute for configuration.
+- Explain parameters beside their values using concise YAML or Bash `#` comments.
+  Show optional parameters commented out. Do not repeat those explanations in prose.
+- Remove repeated reminders, vague "review/update as needed" instructions, internal
+  implementation details and development history from operator steps.
+- State what to run and what output confirms success. Keep essential conditions
+  clear without turning a short instruction into a long disclaimer.
+- Do not use ASCII decoration or verbose comments.
+
+## Command Formatting
+
+- Use standard Ubuntu commands. Omit redundant flags and checks
+- Put separate commands on separate lines; do not chain them with `&&`.
+- Keep the command and short flags together: `curl -fL \`, not a bare `curl`
+  followed by a separate line containing only `-fL`.
+- Wrap long commands or single argument swith `\` at logical boundaries.
+  Put each CMake definition or server option with its value on its own continuation line. Do not split every short argument mechanically or leave the entire command on one long line.
+- When a recipe requires a reboot, show `sudo reboot`; do not add a shell check
+  just to decide whether to print or run it. Never reboot a host without authorization.
 
 ## Recipes
 
 - Keep Ansible roles reusable and host-agnostic.
 - Align manual recipes with their Ansible roles in settings, installation order,
-  and final result.
+  model paths, build flags, service arguments and final result. A prose-only edit
+  should leave commands unchanged unless a correction requires changing them.
 - Keep manual recipes simple. Skip redundant variable, OS, and preflight checks,
   change tracking, and check-mode reports. Retain essential safeguards and final
   verification.
@@ -25,10 +61,9 @@
   runtime checks, idempotence, and check-mode handling.
 - Use two-level numbering in Markdown recipes: `## 1. Role name`, then
   `### 1.1 Logical part`, `### 1.2 Logical part`, and so on.
-- Match top-level numbers to the roles in playbook order. For manual-only
-  recipes, use one top-level service section and number its logical parts.
+- Keep generic libraries and AMD-specific libraries in separate sections and blocks.
 - Combine related commands for each numbered part into one `bash` block. Use
-  concise `# comments` inside the block to distinguish its operations.
+  named Runme cells and concise `# comments` to distinguish operations.
 - Mark optional major sections with `(Optional)` in the heading and state when
   they are needed. The label applies to the entire section; describe separately
   whether the playbook includes the role by default.
@@ -48,15 +83,30 @@
 - Set the default SSH user to `ubuntu` in `group_vars/all.yml`.
 - Keep AMD hardware and package settings in `group_vars/amd_hosts.yml` and target
   `amd_hosts`; put host-specific values in ignored host variables.
+- Keep model configuration in inventory
+- Keep the model catalog independent of the inference engine. Roles must support
+  the list without embedding a particular model in their defaults. Populate one
+  model and use that same example throughout the manual until asked to add more.
+- Model `revision` and `sha256` are optional. Show them as commented-out fields;
+  basic installation must work without either. Use clear names, not redundant
+  combinations such as `model_store_model`.
 - Roles must not contain node names or host-specific package cleanup.
 - Run Ansible from the repository root and include `--diff` in every
   `ansible-playbook` example or instruction.
-- Keep validation in Ansible and use local playbook syntax/inventory checks.
+- Keep validation in Ansible. Run local syntax/inventory checks only when testing
+  is within the current scope; never override a user's "no tests" instruction.
 - Do not add tests, embedded scripts, or recipe-rewriting helper scripts.
 
 ## Compatibility and Verification
 
+- Public recipes and role defaults must not require hardcoded version pins.
+  Discover installed versions or omit pinning; optional model pins remain opt-in.
+  Cleanup takes package names, not a package/version map. Discover actual leftover
+  directory paths rather than copying a versioned path from the verification host.
 - Check current AMD and Ubuntu primary sources before selecting versions.
+- This is a public, reusable developer repository. Treat the RX 6900 XT as the
+  verification card, not a host identity to embed in roles. Use `gfx1030` where
+  compilation needs it; omit unnecessary PCI IDs from the installation guide.
 - Distinguish architecture package availability, vendor product support,
   upstream testing, and verification on the actual host.
 - A shared GFX target does not establish RX 6900 XT product or framework support.
@@ -66,6 +116,11 @@
   existing installation conflicts separately.
 - Report reboot requirements; do not reboot automatically.
 - A successful package installation is not GPU or workload validation.
+- When tests are requested, report both requested backends and the actual model,
+  cache, concurrency and relevant results. Respect the requested test combinations;
+  do not silently substitute another quantization or expand the matrix.
+- Keep recommendations separate from measurements. State the recommended command
+  and when to use it; never present an untested configuration as verified.
 
 ## Maintainer Context
 
