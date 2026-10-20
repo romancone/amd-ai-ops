@@ -1,13 +1,15 @@
 # llama.cpp with Vulkan and HIP
 
-A native systemd service for Gemma 4 12B instruction-tuned text generation.
-Build both backends, then select one for the service. Start with Q4_0 weights,
-a 4,096-token context and one request slot. Thinking is disabled for this baseline.
+A native Gemma 4 12B Q4_0 service with Vulkan by default, a matching image projector,
+and MTP for two concurrent users. Build both Vulkan and HIP; run one service.
+Thinking is disabled. See [measured profiles](llama-performance.md) and the
+[visual check](image-check.md).
 
 Complete [rocm.md](rocm.md) first: generic build/Vulkan libraries and AMD HIP
 libraries stay in their separate sections there. This recipe also requires `curl`
 (`sudo apt install curl` if it is missing).
-Run the named Bash cells in order as your normal user. Stop on any failed command.
+Run cells 1.1–1.8 in order as your normal user. Use 1.9 only to change profiles.
+Stop on any failed command.
 Ansible equivalent: [llama.yml](llama.yml), role [llama](roles/llama/).
 
 ## 1. llama.cpp service
@@ -15,7 +17,8 @@ Ansible equivalent: [llama.yml](llama.yml), role [llama](roles/llama/).
 ### 1.1 Settings
 
 These defaults match [the role](roles/llama/defaults/main.yml). The service binds
-to localhost. Use `hip` instead of `vulkan` to select the AMD backend.
+to localhost. Defaults target two concurrent users on the 16 GB verification card.
+The context is shared equally between users; other cards may need a smaller value.
 
 <!-- ops-step
 id: llama.settings
@@ -35,15 +38,27 @@ export LLAMA_MODEL_URL=https://huggingface.co/ggml-org/gemma-4-12B-it-GGUF/resol
 export LLAMA_MODEL_SHA256=3712b9bd32cae83a22f67ee7a4466d8d7a4f21646ac8a07d19bf9418e8767a70
 export LLAMA_SERVICE_USER=llama
 export LLAMA_STATE_DIR=/var/lib/llama
-export LLAMA_CONTEXT=4096
-export LLAMA_FLASH_ATTENTION=off
+export LLAMA_PARALLEL=2
+export LLAMA_CONTEXT=524288
+export LLAMA_FLASH_ATTENTION=on
+export LLAMA_CACHE_K=q8_0
+export LLAMA_CACHE_V=q8_0
+export LLAMA_UBATCH=1152
+export LLAMA_KV_UNIFIED=true
+export LLAMA_CHECKPOINTS=0
+export LLAMA_CACHE_RAM=0
+export LLAMA_MMPROJ_FILE=mmproj-gemma-4-12B-it-BF16.gguf
+export LLAMA_MTP_FILE=mtp-gemma-4-12B-it-Q4_0.gguf
+export LLAMA_MTP_TOKENS=3
+export LLAMA_VISION=true
+export LLAMA_MTP=true
 export LLAMA_PORT=8080
 ```
 
 ### 1.2 Get llama.cpp
 
-Pinned release: `v0.7.0`, commit `620d2225cc436ab0b001e3200e590e3b286ef9ab`.
-On an existing checkout, fetch and check out this release instead of cloning again.
+Pinned upstream revision: `dd002b91f583af0b80140f9a140dc04856bfc2e0` (2026-10-20).
+On an existing checkout, fetch and check out this revision instead of cloning again.
 
 <!-- ops-step
 id: llama.source.prepare
@@ -52,14 +67,16 @@ kind: file
 -->
 <!-- ops-step
 id: llama.source.checkout
-ansible_task: llama.source.checkout | Check out the pinned llama.cpp release
+ansible_task: llama.source.checkout | Check out the pinned llama.cpp revision
 kind: command
 -->
 
 ```bash { name=llama-source }
 sudo mkdir -p "$LLAMA_SOURCE"
 sudo chown "$USER" "$LLAMA_SOURCE"
-git clone --branch v0.7.0 --depth 1 https://github.com/ggml-org/llama.cpp.git "$LLAMA_SOURCE"
+git clone --no-checkout --depth 1 https://github.com/ggml-org/llama.cpp.git "$LLAMA_SOURCE"
+git -C "$LLAMA_SOURCE" fetch --depth 1 origin dd002b91f583af0b80140f9a140dc04856bfc2e0
+git -C "$LLAMA_SOURCE" checkout --detach dd002b91f583af0b80140f9a140dc04856bfc2e0
 git -C "$LLAMA_SOURCE" rev-parse HEAD
 ```
 
@@ -113,8 +130,8 @@ Both device lists must show the real GPU. CPU-only output is not a successful bu
 
 ### 1.5 Download Gemma 4 12B
 
-The Q4_0 file is 7.22 GB. Download only the text model for this first test.
-Keep existing models in their own directories.
+The model is 7.22 GB. The BF16 projector enables images; the Q4_0 draft enables
+MTP. Keep existing models in their own directories.
 
 <!-- ops-step
 id: llama.model.prepare
@@ -127,12 +144,28 @@ ansible_task: llama.model.download | Download and verify the pinned model
 kind: command
 -->
 
+<!-- ops-step
+id: llama.sidecars.download
+ansible_task: llama.sidecars.download | Download and verify enabled model sidecars
+kind: command
+-->
+
 ```bash { name=llama-model }
 sudo mkdir -p "$LLAMA_MODEL_DIR"
 sudo chown "$USER" "$LLAMA_MODEL_DIR"
 curl -fL "$LLAMA_MODEL_URL" -o "$LLAMA_MODEL_DIR/$LLAMA_MODEL_FILE"
 echo "$LLAMA_MODEL_SHA256  $LLAMA_MODEL_DIR/$LLAMA_MODEL_FILE" | sha256sum -c -
 chmod 644 "$LLAMA_MODEL_DIR/$LLAMA_MODEL_FILE"
+if [ "$LLAMA_VISION" = true ]; then
+  curl -fL "${LLAMA_MODEL_URL%/*}/$LLAMA_MMPROJ_FILE" -o "$LLAMA_MODEL_DIR/$LLAMA_MMPROJ_FILE"
+  echo "9b1edfa05b634728ca4bfd60b4e6b278e95166c078fa54ae4fa83e680112fd1d  $LLAMA_MODEL_DIR/$LLAMA_MMPROJ_FILE" | sha256sum -c -
+  chmod 644 "$LLAMA_MODEL_DIR/$LLAMA_MMPROJ_FILE"
+fi
+if [ "$LLAMA_MTP" = true ]; then
+  curl -fL "${LLAMA_MODEL_URL%/*}/$LLAMA_MTP_FILE" -o "$LLAMA_MODEL_DIR/$LLAMA_MTP_FILE"
+  echo "b894e614824dfc2746b26d3c3ba78c50000a464382682502392b4325257b7602  $LLAMA_MODEL_DIR/$LLAMA_MTP_FILE" | sha256sum -c -
+  chmod 644 "$LLAMA_MODEL_DIR/$LLAMA_MTP_FILE"
+fi
 ```
 
 ### 1.6 Create the service user
@@ -158,8 +191,8 @@ sudo install -d -m 755 -o "$LLAMA_SERVICE_USER" -g "$LLAMA_SERVICE_USER" "$LLAMA
 
 ### 1.7 Create and start the service
 
-Flash Attention is disabled in this baseline: the HIP path hit a kernel-occupancy
-assertion on the verification card with Gemma 4. Log verbosity 4 records GPU placement.
+Flash Attention enables compressed Vulkan caches. A 1,152-token microbatch preserves
+the model’s full image budget. Log verbosity 4 records GPU placement.
 
 <!-- ops-step
 id: llama.systemd.write
@@ -173,6 +206,18 @@ kind: command
 -->
 
 ```bash { name=llama-service }
+LLAMA_KV_ARGS=""
+LLAMA_VISION_ARGS=""
+LLAMA_MTP_ARGS=""
+if [ "$LLAMA_KV_UNIFIED" = true ]; then
+  LLAMA_KV_ARGS=" --kv-unified --kv-unified-per-slot $((LLAMA_CONTEXT / LLAMA_PARALLEL))"
+fi
+if [ "$LLAMA_VISION" = true ]; then
+  LLAMA_VISION_ARGS=" --mmproj $LLAMA_MODEL_DIR/$LLAMA_MMPROJ_FILE"
+fi
+if [ "$LLAMA_MTP" = true ]; then
+  LLAMA_MTP_ARGS=" --spec-type draft-mtp --spec-draft-model $LLAMA_MODEL_DIR/$LLAMA_MTP_FILE --spec-draft-n-max $LLAMA_MTP_TOKENS --spec-draft-ngl all --spec-draft-type-k $LLAMA_CACHE_K --spec-draft-type-v $LLAMA_CACHE_V"
+fi
 sudo tee /etc/systemd/system/llama.service >/dev/null <<EOF
 [Unit]
 Description=llama.cpp - $LLAMA_MODEL_NAME - $LLAMA_BACKEND
@@ -186,7 +231,7 @@ Group=$LLAMA_SERVICE_USER
 SupplementaryGroups=render video
 Environment=HOME=$LLAMA_STATE_DIR
 WorkingDirectory=$LLAMA_SOURCE
-ExecStart=$LLAMA_SOURCE/build-$LLAMA_BACKEND/bin/llama-server --model $LLAMA_MODEL_DIR/$LLAMA_MODEL_FILE --alias $LLAMA_MODEL_NAME --ctx-size $LLAMA_CONTEXT --parallel 1 --flash-attn $LLAMA_FLASH_ATTENTION --n-gpu-layers all --host 127.0.0.1 --port $LLAMA_PORT --jinja --reasoning-budget 0 --log-verbosity 4
+ExecStart=$LLAMA_SOURCE/build-$LLAMA_BACKEND/bin/llama-server --model $LLAMA_MODEL_DIR/$LLAMA_MODEL_FILE --alias $LLAMA_MODEL_NAME --ctx-size $LLAMA_CONTEXT --parallel $LLAMA_PARALLEL --flash-attn $LLAMA_FLASH_ATTENTION --cache-type-k $LLAMA_CACHE_K --cache-type-v $LLAMA_CACHE_V --ubatch-size $LLAMA_UBATCH --ctx-checkpoints $LLAMA_CHECKPOINTS --cache-ram $LLAMA_CACHE_RAM --fit off --n-gpu-layers all --host 127.0.0.1 --port $LLAMA_PORT --jinja --reasoning-budget 0 --log-verbosity 4$LLAMA_KV_ARGS$LLAMA_VISION_ARGS$LLAMA_MTP_ARGS
 Restart=on-failure
 RestartSec=5
 
@@ -233,10 +278,39 @@ curl -f "http://127.0.0.1:$LLAMA_PORT/v1/chat/completions" \
 sudo journalctl -u llama.service -n 100 --no-pager
 ```
 
-To test the other backend, set `export LLAMA_BACKEND=hip`, then rerun cells
-`llama-service` and `llama-verify`. Use `vulkan` to switch back. Both binaries remain
-installed; only one model server runs at a time.
+### 1.9 Select another profile (Optional)
 
-Sources: [llama.cpp build instructions](https://github.com/ggml-org/llama.cpp/blob/v0.7.0/docs/build.md),
-[server options](https://github.com/ggml-org/llama.cpp/blob/v0.7.0/tools/server/README.md),
+Starting from `llama-settings`, apply the four-user settings below and rerun `llama-service` and
+`llama-verify`. Ansible selects the same profile with `llama_parallel=4`.
+
+```bash { name=llama-four-users }
+export LLAMA_PARALLEL=4
+export LLAMA_CONTEXT=1048576
+export LLAMA_CACHE_V=q4_0
+export LLAMA_MTP=false
+```
+
+Starting from `llama-settings`, apply the HIP settings below and rerun those same cells. Its
+Gemma Flash Attention kernel fails on the verification card, so use FP16 caches.
+Ansible selects these backend defaults with `llama_backend=hip`.
+
+```bash { name=llama-hip-profile }
+export LLAMA_BACKEND=hip
+export LLAMA_KV_UNIFIED=false
+export LLAMA_PARALLEL=2
+export LLAMA_CONTEXT=4096
+export LLAMA_FLASH_ATTENTION=off
+export LLAMA_CACHE_K=f16
+export LLAMA_CACHE_V=f16
+export LLAMA_MTP=false
+```
+
+To restore Vulkan defaults, rerun `llama-settings`, `llama-service` and `llama-verify`.
+Only one server runs at a time. The profiles disable RAM prompt caching and SWA
+checkpoints for the measured independent-request workload; edited or branching
+chat histories can require prompt reprocessing. See the performance notes before
+changing these settings for a different workload.
+
+Sources: [llama.cpp build instructions](https://github.com/ggml-org/llama.cpp/blob/dd002b91f583af0b80140f9a140dc04856bfc2e0/docs/build.md),
+[server options](https://github.com/ggml-org/llama.cpp/blob/dd002b91f583af0b80140f9a140dc04856bfc2e0/tools/server/README.md),
 [Gemma model](https://huggingface.co/ggml-org/gemma-4-12B-it-GGUF).

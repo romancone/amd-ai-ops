@@ -1,3 +1,4 @@
+#jinja2: trim_blocks: False
 [Unit]
 Description=llama.cpp - {{ llama_model_alias }} - {{ llama_backend }}
 After=network-online.target
@@ -10,7 +11,7 @@ Group={{ llama_service_user }}
 SupplementaryGroups=render video
 Environment=HOME={{ llama_state_dir }}
 WorkingDirectory={{ llama_source_dir }}
-ExecStart={{ llama_source_dir }}/build-{{ llama_backend }}/bin/llama-server --model {{ llama_model_dir }}/{{ llama_model_file }} --alias {{ llama_model_alias }} --ctx-size {{ llama_context }} --parallel 1 --flash-attn {{ llama_flash_attention }} --n-gpu-layers all --host 127.0.0.1 --port {{ llama_port }} --jinja --reasoning-budget 0 --log-verbosity 4
+ExecStart={{ llama_source_dir }}/build-{{ llama_backend }}/bin/llama-server --model {{ llama_model_dir }}/{{ llama_model_file }} --alias {{ llama_model_alias }} --ctx-size {{ llama_context }} --parallel {{ llama_parallel }} --flash-attn {{ llama_flash_attention }} --cache-type-k {{ llama_cache_k }} --cache-type-v {{ llama_cache_v }} --ubatch-size {{ llama_ubatch }} --ctx-checkpoints {{ llama_ctx_checkpoints }} --cache-ram {{ llama_cache_ram }} --fit off --n-gpu-layers all --host 127.0.0.1 --port {{ llama_port }} --jinja --reasoning-budget 0 --log-verbosity 4{% if llama_kv_unified | bool %} --kv-unified --kv-unified-per-slot {{ llama_context | int // llama_parallel | int }}{% endif %}{% if llama_vision | bool %} --mmproj {{ llama_model_dir }}/{{ llama_mmproj_file }}{% endif %}{% if llama_mtp | bool %} --spec-type draft-mtp --spec-draft-model {{ llama_model_dir }}/{{ llama_mtp_file }} --spec-draft-n-max {{ llama_mtp_tokens }} --spec-draft-ngl all --spec-draft-type-k {{ llama_cache_k }} --spec-draft-type-v {{ llama_cache_v }}{% endif %}
 Restart=on-failure
 RestartSec=5
 

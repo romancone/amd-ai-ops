@@ -10,7 +10,7 @@ and settings. Generic dependencies and AMD-specific dependencies stay separate.
 |---|---|---|---|
 | Reviewed legacy ROCm cleanup (optional) | [cleanup.md](cleanup.md) | [cleanup.yml](cleanup.yml) | Verified purge, leftover removal and idempotence on the verification host |
 | Generic tools, Vulkan, HIP and ROCm PyTorch | [rocm.md](rocm.md) | [site.yml](site.yml) | Installed; basic GPU checks passed, PyTorch requires the documented process-local preload |
-| llama.cpp with Vulkan and HIP, Gemma 4 12B | [llama.md](llama.md) | [llama.yml](llama.yml) | Text generation verified on both; Flash Attention disabled |
+| llama.cpp with Vulkan and HIP, Gemma 4 12B | [llama.md](llama.md) | [llama.yml](llama.yml) | Vulkan tuning and vision: [results](llama-performance.md); HIP fallback available |
 
 The base uses Ubuntu packages and the existing distribution `amdgpu` driver.
 The separate llama.cpp recipe builds both GPU backends and runs one native model
@@ -53,7 +53,13 @@ ansible-playbook llama.yml --check --diff
 ansible-playbook llama.yml --diff
 ```
 
-Vulkan is the default. Switch the same service to HIP and repeat its inference check:
+Vulkan is the default, with two concurrent users. Select the four-user profile:
+
+```bash
+ansible-playbook llama.yml --diff -e llama_parallel=4
+```
+
+Switch the same service to the conservative HIP profile and repeat its inference check:
 
 ```bash
 ansible-playbook llama.yml --diff -e llama_backend=hip
@@ -104,7 +110,7 @@ runme list --filename llama.md
 | llama 1.2 Source | llama | `llama.source.prepare`, `llama.source.checkout` |
 | llama 1.3 Vulkan build | llama | `llama.vulkan.configure`, `llama.vulkan.build` |
 | llama 1.4 HIP build | llama | `llama.hip.configure`, `llama.hip.build`, `llama.backends.verify` |
-| llama 1.5 Model | llama | `llama.model.prepare`, `llama.model.download` |
+| llama 1.5 Model | llama | `llama.model.prepare`, `llama.model.download`, `llama.sidecars.download` |
 | llama 1.6 Service user | llama | `llama.user.create`, `llama.state.prepare` |
 | llama 1.7 Service | llama | `llama.systemd.write`, `llama.systemd.start` |
 | llama 1.8 Inference | llama | `llama.health.verify`, `llama.models.verify`, `llama.inference.verify`, `llama.offload.verify` |
@@ -152,38 +158,19 @@ The role scopes the same setting to its Python command; it does not alter shell
 profiles or the system loader. Retest without this workaround after package updates.
 The basic checks do not establish compatibility with every training workload.
 
-llama.cpp `v0.7.0` with the pinned Gemma 4 12B IT Q4_0 file passed arithmetic and
-short Python-code generation through both backend APIs. Logs confirmed 49/49 layers
-offloaded to Vulkan0 or ROCm0. The service uses a 4,096-token context and one slot;
-this does not validate the model's full native context or multimodal features.
+The llama.cpp recipe pins upstream commit `dd002b91f583af0b80140f9a140dc04856bfc2e0`
+(2026-10-20), builds Vulkan and HIP, and serves the checksummed Gemma 4 12B Q4_0
+model. Vulkan profiles use Flash Attention and compressed KV caches. The matching
+BF16 projector enables images; the Q4_0 MTP draft is selected only for two users.
+Both profiles passed concurrent API and image checks; the final default playbook
+rerun completed with `changed=0` and `failed=0`.
+See [performance and capacity measurements](llama-performance.md) and the
+[reproducible visual check](image-check.md).
 
-With HIP's default automatic Flash Attention, the first inference aborted at
-`GGML_ASSERT(max_blocks_per_sm > 0)` in `fattn-common.cuh`. Disabling Flash Attention
-passed the same checks. The recipe sets `--flash-attn off` for both backends to keep
-a common tested baseline; this is specific to the tested release, model and card.
-The C++ service does not use the PyTorch compiler preload.
-
-Default-size `llama-bench` verification used pp512 and tg128, five repetitions,
-f16 KV cache, all layers on the selected GPU and Flash Attention off:
-
-| Backend | pp512 tokens/s | tg128 tokens/s |
-|---|---:|---:|
-| Vulkan | 1,327.14 ± 1.49 | 52.14 ± 0.20 |
-| HIP | 1,221.53 ± 8.10 | 48.71 ± 0.03 |
-
-Both exited successfully and reached 99% GPU utilization and 281 W in samples
-collected every 0.5 seconds. Earlier, longer pp512/tg256 tests with ten repetitions
-ran for 57 and 60 seconds respectively, with mean GPU utilization of 91.3% and
-95.1%. These are short-context benchmarks, not serving capacity at a full
-4,096-token context. Subsecond API checks are easy to miss in `nvtop`.
-
-An additional HIP trial with the existing Google Gemma 4 12B IT QAT Q4_0 model,
-Q4_0 K/V caches and Flash Attention on also aborted at the same occupancy assertion.
-The old `GGML_HIP_ROCWMMA_FATTN` and `GGML_FLASH_ATTN` CMake variables are not
-consumed by the pinned source; current HIP builds already include attention kernels.
-Do not add these flags or claim that the previous 131,072-token, two-slot multimodal
-configuration has been validated by these tests.
-The final llama.cpp playbook rerun completed with `changed=0` and `failed=0`.
+HIP uses FP16 caches and Flash Attention off: Gemma's HIP attention kernel failed
+with `GGML_ASSERT(max_blocks_per_sm > 0)` on the verification card. The old
+`GGML_HIP_ROCWMMA_FATTN` and `GGML_FLASH_ATTN` CMake flags are not consumed by this
+source. The standalone C++ service does not use the PyTorch compiler preload.
 
 ## Project Rules
 

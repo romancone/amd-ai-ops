@@ -36,11 +36,15 @@ Base installation and Vulkan/HIP compute are verified on the initial card.
 Basic PyTorch training is verified only with the process-local compiler preload
 documented in README. No global loader change is made.
 
-The llama.cpp role pins a source release and a checksummed Gemma 4 12B Q4_0 model,
+The llama.cpp role pins a source revision and a checksummed Gemma 4 12B Q4_0 model,
 builds Vulkan and HIP in separate directories and runs one localhost systemd service.
 Its selected backend must pass API generation and full GPU-layer offload checks.
-Gemma 4 on the initial card requires Flash Attention disabled for HIP; both backend
-defaults use that tested baseline. Keep the manual command and service template aligned.
+Vulkan is the default. Concurrency profiles choose compressed caches and MTP from
+measured results in llama-performance.md. Gemma 4 on the initial card requires
+Flash Attention disabled for HIP. Keep the manual command and service template aligned.
+The matching image projector is enabled by default; tools/image-check.py implements
+the visual test. Its private inputs and raw results stay outside
+version control. image-check.md owns the scoring procedure.
 Do not apply the Python compiler preload to this standalone C++ service.
 
 ## Recipe Alignment
@@ -55,7 +59,8 @@ commands in README and target-host commands in the recipe. README's step map
 connects notebook cells to role operations; keep it current when grouping changes.
 
 Use native Ansible modules and direct tool invocations. Keep roles host-agnostic.
-Do not add tests, embedded scripts, or host-specific package cleanup.
+Keep validation in Ansible except for the standalone visual check. Do not add
+embedded scripts or host-specific package cleanup.
 
 ## Validation
 
