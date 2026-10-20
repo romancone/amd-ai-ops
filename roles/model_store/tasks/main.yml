@@ -38,6 +38,10 @@
       - item.revision is not defined or (item.revision is string and item.revision | length > 0)
       - item.file is match('^[A-Za-z0-9][A-Za-z0-9_.-]*\.gguf$')
       - item.sha256 is not defined or item.sha256 is match('^[0-9a-f]{64}$')
+      - item.mmproj is not defined or item.mmproj is match('^mmproj-[A-Za-z0-9_.-]*BF16\.gguf$')
+      - item.mmproj is not defined or item.mmproj != item.file
+      - item.mmproj_sha256 is not defined or (item.mmproj is defined and item.mmproj_sha256 is match('^[0-9a-f]{64}$'))
+    fail_msg: Use safe model filenames and a publisher-provided mmproj-...BF16.gguf projector; checksums are optional.
   loop: "{{ models }}"
   loop_control:
     label: "{{ item.name }}"

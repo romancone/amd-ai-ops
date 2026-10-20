@@ -28,6 +28,7 @@ export LLAMA_GPU_ARCH=gfx1030
 export LLAMA_MODEL_ID=gemma-4-12B-it-Q4_0
 export LLAMA_MODEL_REPO=ggml-org/gemma-4-12B-it-GGUF
 export LLAMA_MODEL_FILE=gemma-4-12B-it-Q4_0.gguf
+# export LLAMA_MMPROJ=mmproj-gemma-4-12B-it-BF16.gguf  # Optional images; BF16 only
 export LLAMA_MODEL_DIR=/opt/models/$LLAMA_MODEL_ID
 export LLAMA_SERVICE_USER=llama
 export LLAMA_STATE_DIR=/var/lib/llama
@@ -47,6 +48,8 @@ models:  # Models to download
   - name: gemma-4-12B-it-Q4_0
     repo: ggml-org/gemma-4-12B-it-GGUF
     file: gemma-4-12B-it-Q4_0.gguf
+    # mmproj: mmproj-gemma-4-12B-it-BF16.gguf  # Optional images; BF16 only
+    # mmproj_sha256: 9b1edfa05b634728ca4bfd60b4e6b278e95166c078fa54ae4fa83e680112fd1d  # Optional projector checksum
     # revision: a29b2a6b584a5bdcb672ccdcda99ea9faeacc51a  # Optional version pin
     # sha256: 3712b9bd32cae83a22f67ee7a4466d8d7a4f21646ac8a07d19bf9418e8767a70  # Optional checksum
 
@@ -93,7 +96,8 @@ The download command below enables high-performance mode to help download faster
 
 ### 1.4 Download Gemma 4 12B
 
-Download the text model. If the file already exists, skip the download as Ansible does.
+Download the text model and optional BF16 projector. Skip downloads for files
+that already exist, as Ansible does. Both files use the same repository and revision.
 
 <!-- ops-step
 id: llama.model.prepare
@@ -113,6 +117,13 @@ HF_XET_HIGH_PERFORMANCE=1 hf download \
   "$LLAMA_MODEL_FILE" \
   --local-dir "$LLAMA_MODEL_DIR"
 chmod 644 "$LLAMA_MODEL_DIR/$LLAMA_MODEL_FILE"
+if [ -n "${LLAMA_MMPROJ:-}" ]; then
+  HF_XET_HIGH_PERFORMANCE=1 hf download \
+    "$LLAMA_MODEL_REPO" \
+    "$LLAMA_MMPROJ" \
+    --local-dir "$LLAMA_MODEL_DIR"
+  chmod 644 "$LLAMA_MODEL_DIR/$LLAMA_MMPROJ"
+fi
 ```
 
 To use `curl` instead, replace only the `hf download` command with this:
@@ -129,6 +140,9 @@ Optional download settings:
 - `revision`: add `--revision VALUE` to `hf`, or replace `main` in the curl URL.
 - `sha256`: run `echo 'EXPECTED_SHA256  /path/to/model.gguf' | sha256sum -c -`.
   If it fails, add `--force-download` to the download command and recheck.
+
+Apply the same revision to both downloads. `mmproj_sha256` checks the projector
+in the same way as `sha256` checks the model.
 
 Ansible replaces files that fail the checksum. Without a checksum, it keeps existing
 files. To download a different revision, remove the old file or supply its new checksum.
@@ -240,6 +254,7 @@ Environment=HOME=$LLAMA_STATE_DIR
 WorkingDirectory=$LLAMA_SOURCE
 ExecStart=$LLAMA_SOURCE/build-vulkan/bin/llama-server \
   --model $LLAMA_MODEL_DIR/$LLAMA_MODEL_FILE \
+  ${LLAMA_MMPROJ:+--mmproj $LLAMA_MODEL_DIR/$LLAMA_MMPROJ} \
   --alias $LLAMA_MODEL_ID \
   --ctx-size $LLAMA_CONTEXT \
   --parallel $LLAMA_PARALLEL \
@@ -376,6 +391,7 @@ Environment=HOME=$LLAMA_STATE_DIR
 WorkingDirectory=$LLAMA_SOURCE
 ExecStart=$LLAMA_SOURCE/build-hip/bin/llama-server \
   --model $LLAMA_MODEL_DIR/$LLAMA_MODEL_FILE \
+  ${LLAMA_MMPROJ:+--mmproj $LLAMA_MODEL_DIR/$LLAMA_MMPROJ} \
   --alias $LLAMA_MODEL_ID \
   --ctx-size $LLAMA_CONTEXT \
   --parallel $LLAMA_PARALLEL \
@@ -404,7 +420,45 @@ sudo systemctl restart llama.service
 Run `llama-verify` from section 2.3. The logs should show all model layers loaded
 onto `ROCm0` and `flash_attn = enabled`. To switch back to Vulkan, follow section 2.
 
-Sources: [build instructions](https://github.com/ggml-org/llama.cpp/blob/master/docs/build.md),
+## 4. Images (Optional)
+
+### 4.1 Describe a JPEG
+
+Use this after enabling the BF16 projector in section 1.1, downloading it and
+starting either backend. For an existing installation, rerun `llama-model` and
+its backend's service cell. Ansible includes the projector only when `mmproj`
+is set in the selected catalog entry; rerun `llama.yml` to apply it.
+Both backends passed a basic image request with this BF16 projector. When enabled,
+logs should show `loaded multimodal model` and `CLIP using ROCm0` or `Vulkan0`.
+The default microbatch limits Gemma's image budget to 512 tokens.
+
+```bash { name=llama-image }
+IMAGE_FILE=/path/to/image.jpg
+IMAGE_DATA=$(base64 -w 0 "$IMAGE_FILE")
+curl -f \
+  "http://127.0.0.1:$LLAMA_PORT/v1/chat/completions" \
+  -H 'Content-Type: application/json' \
+  --data-binary @- <<EOF
+{
+  "model": "$LLAMA_MODEL_ID",
+  "messages": [{"role": "user", "content": [
+    {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64,$IMAGE_DATA"}},
+    {"type": "text", "text": "Describe this image briefly."}
+  ]}],
+  "temperature": 0,
+  "max_tokens": 256
+}
+EOF
+```
+
+The response should describe visible objects in your image. Compare it with the
+image yourself; an HTTP success does not establish visual accuracy. To return
+to text-only serving, unset `LLAMA_MMPROJ` and rerun the service cell, or remove
+`mmproj` from the catalog and rerun Ansible.
+
+Sources: [multimodal support](https://github.com/ggml-org/llama.cpp/blob/master/docs/multimodal.md),
+[BF16 projector](https://huggingface.co/ggml-org/gemma-4-12B-it-GGUF/blob/main/mmproj-gemma-4-12B-it-BF16.gguf),
+[build instructions](https://github.com/ggml-org/llama.cpp/blob/master/docs/build.md),
 [CMake options](https://github.com/ggml-org/llama.cpp/blob/master/ggml/CMakeLists.txt),
 [server options](https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md),
 [Hugging Face CLI](https://huggingface.co/docs/huggingface_hub/en/guides/cli).

@@ -16,6 +16,7 @@ Keep paired operator paths with the same settings, installation order, and resul
 - `llama.md` pairs with `llama.yml` after the base install: common setup, Vulkan, HIP.
 - Inventory's `models` list owns model names, repositories and filenames; revisions and checksums are optional.
 - `model_store` installs `hf` and downloads the list; `llama` serves the entry named by `llama_model`.
+- Optional `models[].mmproj` selects a publisher-provided BF16 projector from the same repository and revision. Other projector precisions are rejected by filename; optional `mmproj_sha256` verifies the chosen artifact.
 - `ansible.cfg` selects the ignored `./hosts` inventory.
 - `hosts.example.ini` is the public inventory template; local `host_vars/` stay ignored.
 - `group_vars/all.yml` sets SSH user `ubuntu`.
@@ -57,6 +58,9 @@ The patch limits 256/512-dimensional heads to smaller tiles and preserves the
 occupancy assertion. Remove only this managed patch before updating the source,
 then reapply it for HIP on RDNA2. Stop if an upstream change makes it incompatible.
 Keep the manual commands and service template aligned.
+Optional BF16 projector loading and a basic image request passed on HIP and Vulkan.
+The role checks projector GPU placement when enabled. The default microbatch caps
+Gemma's image budget at 512 tokens; broader visual quality remains unverified.
 Do not apply the Python compiler preload to this standalone C++ service.
 
 ## Recipe Alignment

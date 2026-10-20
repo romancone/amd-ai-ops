@@ -1,0 +1,41 @@
+---
+- name: Inspect the existing file checksum
+  ansible.builtin.stat:
+    path: "{{ model_store_root }}/{{ model.name }}/{{ artifact_file }}"
+    checksum_algorithm: sha256
+    get_checksum: "{{ artifact_sha256 | length > 0 }}"
+  register: model_existing
+
+- name: llama.model.download | Download the model with hf
+  ansible.builtin.command:
+    argv: >-
+      {{ [model_store_hf_venv ~ '/bin/hf', 'download', model.repo, artifact_file,
+          '--local-dir', model_store_root ~ '/' ~ model.name]
+         + (['--revision', model.revision] if model.revision is defined else [])
+         + (['--force-download'] if artifact_sha256 | length > 0 else []) }}
+  environment:
+    HF_XET_HIGH_PERFORMANCE: "1"
+  register: model_download
+  when:
+    - not ansible_check_mode
+    - >-
+      not model_existing.stat.exists or
+      (artifact_sha256 | length > 0 and model_existing.stat.checksum | default('') != artifact_sha256)
+
+- name: Verify the downloaded file checksum
+  ansible.builtin.stat:
+    path: "{{ model_store_root }}/{{ model.name }}/{{ artifact_file }}"
+    checksum_algorithm: sha256
+  register: model_verified
+  failed_when: model_verified.stat.checksum | default('') != artifact_sha256
+  when: not ansible_check_mode and artifact_sha256 | length > 0
+
+- name: Make the downloaded file readable by the service
+  ansible.builtin.file:
+    path: "{{ model_store_root }}/{{ model.name }}/{{ artifact_file }}"
+    mode: '0644'
+  when: not ansible_check_mode
+
+- name: Record model changes
+  ansible.builtin.set_fact:
+    model_store_changed: "{{ model_store_changed or model_download is changed }}"

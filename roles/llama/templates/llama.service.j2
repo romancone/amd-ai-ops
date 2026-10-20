@@ -12,6 +12,9 @@ Environment=HOME={{ llama_state_dir }}
 WorkingDirectory={{ llama_source_dir }}
 ExecStart={{ llama_source_dir }}/build-{{ llama_backend }}/bin/llama-server \
     --model {{ model_store_root }}/{{ llama_model }}/{{ llama_model_config.file }} \
+{% if llama_model_config.mmproj is defined %}
+    --mmproj {{ model_store_root }}/{{ llama_model }}/{{ llama_model_config.mmproj }} \
+{% endif %}
     --alias {{ llama_model }} \
     --ctx-size {{ llama_context }} \
     --parallel {{ llama_parallel }} \

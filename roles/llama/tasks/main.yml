@@ -242,6 +242,10 @@
   changed_when: false
   failed_when: >-
     llama_log.rc != 0 or
+    (llama_model_config.mmproj is defined and
+      (llama_log.stdout is not search('loaded multimodal model') or
+       llama_model_config.mmproj not in llama_log.stdout or
+       llama_log.stdout is not search('CLIP using ' ~ ('Vulkan' if llama_backend == 'vulkan' else 'ROCm') ~ '[0-9]+ backend'))) or
     (llama_flash_attention == 'on' and llama_log.stdout is not search('flash_attn\s*=\s*enabled')) or
     llama_log.stdout is not search('offloaded ([1-9][0-9]*)/\\1 layers to GPU') or
     llama_log.stdout is not search(('Vulkan' if llama_backend == 'vulkan' else 'ROCm') ~ '[0-9]+.*model buffer size')

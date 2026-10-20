@@ -12,6 +12,8 @@ models:  # Models to download
   - name: gemma-4-12B-it-Q4_0
     repo: ggml-org/gemma-4-12B-it-GGUF
     file: gemma-4-12B-it-Q4_0.gguf
+    # mmproj: mmproj-gemma-4-12B-it-BF16.gguf  # Optional image support; BF16 only
+    # mmproj_sha256: 9b1edfa05b634728ca4bfd60b4e6b278e95166c078fa54ae4fa83e680112fd1d  # Optional projector checksum
     # revision: a29b2a6b584a5bdcb672ccdcda99ea9faeacc51a  # Optional version pin
     # sha256: 3712b9bd32cae83a22f67ee7a4466d8d7a4f21646ac8a07d19bf9418e8767a70  # Optional checksum
 
