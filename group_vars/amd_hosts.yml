@@ -3,3 +3,7 @@ rocm_ubuntu_version: "26.04"
 rocm_expected_gfx_target: gfx1030
 rocm_profile_packages:
   - rocm-dev
+  - rocm-smi
+rocm_python_packages:
+  - python3-torch-rocm
+rocm_python_preload: /usr/lib/x86_64-linux-gnu/libamd_comgr.so.3

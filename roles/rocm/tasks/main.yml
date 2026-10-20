@@ -10,6 +10,11 @@
       - rocm_profile_packages is sequence and rocm_profile_packages is not string
       - rocm_profile_packages | length > 0
       - rocm_profile_packages | select('match', '^[a-z0-9][a-z0-9+.-]*$') | list | length == rocm_profile_packages | length
+      - rocm_python_packages is sequence and rocm_python_packages is not string
+      - rocm_python_packages | length > 0
+      - rocm_python_packages | reject('match', '^[a-z0-9][a-z0-9+.-]*$') | list | length == 0
+      - rocm_python_preload is string
+      - rocm_python_preload == '' or rocm_python_preload is match('^/[^ :]+$')
     fail_msg: Configure the Ubuntu release, GPU and packages, and connect as the non-root compute user.
 
 - name: amd.driver.inspect.loaded | Require the loaded AMDGPU driver
@@ -75,7 +80,7 @@
 - name: amd.rocm.transaction.inspect | Simulate the Ubuntu ROCm installation
   ansible.builtin.command:
     argv: >-
-      {{ ['apt-get', '--simulate', '--no-remove', 'install', 'rocminfo'] + rocm_profile_packages }}
+      {{ ['apt-get', '--simulate', '--no-remove', 'install', 'rocminfo'] + rocm_profile_packages + rocm_python_packages }}
   environment:
     LC_ALL: C
   register: rocm_transaction
@@ -133,6 +138,35 @@
     msg:
       - "GPU agent: {{ rocm_expected_gfx_target }}"
       - "{{ rocm_compiler.stdout }}"
+  when: not ansible_check_mode
+
+- name: amd.rocm.python.install | Install Ubuntu ROCm PyTorch
+  ansible.builtin.apt:
+    name: "{{ rocm_python_packages }}"
+    state: latest
+    fail_on_autoremove: true
+    force_apt_get: true
+    auto_install_module_deps: false
+  become: true
+
+- name: amd.rocm.python.preload.require | Require the selected compiler library
+  ansible.builtin.stat:
+    path: "{{ rocm_python_preload }}"
+    follow: true
+    get_checksum: false
+  register: rocm_preload_library
+  failed_when: not (rocm_preload_library.stat.isreg | default(false)) or not (rocm_preload_library.stat.readable | default(false))
+  when:
+    - not ansible_check_mode
+    - rocm_python_preload | length > 0
+
+- name: amd.rocm.python.inspect | Report the PyTorch environment
+  ansible.builtin.command:
+    argv: [/usr/bin/python3, -m, torch.utils.collect_env]
+  environment:
+    LD_PRELOAD: "{{ rocm_python_preload }}"
+  register: rocm_python_environment
+  changed_when: false
   when: not ansible_check_mode
 
 - name: amd.rocm.reboot.report | Remind the operator to reboot manually

@@ -1,0 +1,67 @@
+---
+- name: development.settings.require | Require Ubuntu development settings
+  ansible.builtin.assert:
+    that:
+      - ansible_facts.distribution == 'Ubuntu'
+      - ansible_facts.distribution_version == development_ubuntu_version
+      - ansible_facts.architecture == 'x86_64'
+      - ansible_facts.user_id != 'root'
+      - development_packages is sequence and development_packages is not string
+      - development_vulkan_packages is sequence and development_vulkan_packages is not string
+      - (development_packages + development_vulkan_packages) | length > 0
+      - (development_packages + development_vulkan_packages) | reject('match', '^[a-z0-9][a-z0-9+.-]*$') | list | length == 0
+
+- name: development.cache.refresh | Refresh Ubuntu package metadata
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: "{{ development_cache_valid_time }}"
+    auto_install_module_deps: false
+  become: true
+
+- name: development.transaction.inspect | Simulate the development installation
+  ansible.builtin.command:
+    argv: "{{ ['apt-get', '--simulate', '--no-remove', 'install'] + development_packages + development_vulkan_packages }}"
+  environment:
+    LC_ALL: C
+  register: development_transaction
+  changed_when: false
+  check_mode: false
+  become: true
+
+- name: development.transaction.require | Reject unrelated package changes
+  ansible.builtin.assert:
+    that:
+      - development_transaction.stdout is not search('(?m)^Remv ')
+      - development_transaction.stdout is not search('(?m)^Inst (amdgpu-dkms|linux-(image|headers|modules|generic))')
+      - development_transaction.stdout | regex_findall('(?m)^Inst .+$') | reject('search', 'Ubuntu:') | list | length == 0
+    fail_msg: Resolve package removals, kernel changes or non-Ubuntu sources separately.
+
+- name: development.install | Install generic development tools
+  ansible.builtin.apt:
+    name: "{{ development_packages }}"
+    state: latest
+    fail_on_autoremove: true
+    force_apt_get: true
+    auto_install_module_deps: false
+  become: true
+
+- name: development.vulkan.install | Install generic Vulkan development and Mesa packages
+  ansible.builtin.apt:
+    name: "{{ development_vulkan_packages }}"
+    state: latest
+    fail_on_autoremove: true
+    force_apt_get: true
+    auto_install_module_deps: false
+  become: true
+
+- name: development.vulkan.verify | Require a hardware Vulkan device
+  ansible.builtin.command:
+    argv: [vulkaninfo, --summary]
+  environment:
+    LC_ALL: C
+  register: development_vulkan
+  changed_when: false
+  failed_when: >-
+    development_vulkan.rc != 0 or
+    development_vulkan.stdout is not search('deviceType\s*=\s*PHYSICAL_DEVICE_TYPE_(DISCRETE|INTEGRATED)_GPU')
+  when: not ansible_check_mode

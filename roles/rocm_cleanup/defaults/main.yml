@@ -1,0 +1,5 @@
+---
+rocm_cleanup_packages: {}
+rocm_cleanup_roots: []
+rocm_cleanup_files: []
+rocm_cleanup_verify_vulkan: false

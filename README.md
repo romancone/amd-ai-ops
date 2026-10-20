@@ -1,114 +1,122 @@
 # AMD AI Ops
 
-Public AMD GPU recipes for Ubuntu AI hosts. The RX 6900 XT is our verification card.
-Each recipe pairs readable Markdown commands with reusable Ansible roles.
+Public AMD GPU recipes for Ubuntu AI developers. RX 6900 XT (`gfx1030`) is the
+initial verification card. Manual/Runme and Ansible paths use the same packages
+and settings. Generic dependencies and AMD-specific dependencies stay separate.
 
 ## Recipes
 
-| Recipe | Manual / Runme notebook | Ansible | Status |
+| Recipe | Manual / Runme | Ansible | Status |
 |---|---|---|---|
-| RX 6900 XT / Ubuntu 26.04 ROCm development libraries | [rocm.md](rocm.md) | [site.yml](site.yml) | Prepared; not deployed or workload-validated |
+| Reviewed legacy ROCm cleanup (optional) | [cleanup.md](cleanup.md) | [cleanup.yml](cleanup.yml) | Verified purge, leftover removal and idempotence on the verification host |
+| Generic tools, Vulkan, HIP and ROCm PyTorch | [rocm.md](rocm.md) | [site.yml](site.yml) | Installed; basic GPU checks passed, PyTorch requires the documented process-local preload |
 
-The recipe uses Ubuntu's `rocm-dev`, `rocminfo`, and the existing distribution
-`amdgpu` driver. See [Ubuntu's installation guidance](https://ubuntu.com/blog/amd-rocm-on-ubuntu).
+The base uses Ubuntu packages and the existing distribution `amdgpu` driver.
+Application recipes remain deferred; this repository change covers the base installation and cleanup.
 
 ## Ansible
 
-Run from the repository root. [ansible.cfg](ansible.cfg) selects `./hosts`.
-Create your local inventory:
+Run from this repository. `ansible.cfg` selects the ignored `./hosts` inventory:
 
 ```bash
 cp hosts.example.ini hosts
 vim hosts
 ```
 
-Real inventory and local `host_vars/` files are ignored. The default SSH user is
-`ubuntu`; override it in `host_vars/<inventory_hostname>.yml` if needed:
+The default SSH user is `ubuntu`; override `ansible_user` in ignored
+`host_vars/<inventory_hostname>.yml` when needed. Add `--ask-become-pass` when
+sudo requires a password. Configure an explicit cleanup profile as described in
+[cleanup.md](cleanup.md) before using the optional cleanup playbook:
 
-```yaml
-ansible_user: your_ssh_user
+```bash
+ansible-playbook cleanup.yml --check --diff
+ansible-playbook cleanup.yml --diff
 ```
 
-[group_vars/amd_hosts.yml](group_vars/amd_hosts.yml) defines the Ubuntu release,
-ROCm architecture target, and package profile. The example uses `gfx1030` for
-the RX 6900 XT. Preview and apply:
+Preview and install the base:
 
 ```bash
 ansible-playbook site.yml --check --diff
 ansible-playbook site.yml --diff
 ```
 
-Ansible validates the OS, loaded driver, compute-user access, and proposed APT
-transaction. It installs discovery, requires the expected GPU agent, installs
-the development libraries, and reminds you to reboot manually. Check mode uses existing
-APT metadata and skips GPU enumeration and compiler execution. Existing package
-conflicts must be resolved separately. See the guide for target prerequisites;
-add `--ask-become-pass` if sudo requires a password.
+Reboot the host manually, reconnect and repeat the GPU checks. Settings live in
+[group_vars/amd_hosts.yml](group_vars/amd_hosts.yml) and role defaults. Keep manual
+package lists and settings in sync when overriding them.
 
-Local syntax and inventory checks require no target connection:
+Local checks do not connect to hosts:
 
 ```bash
+ansible-playbook cleanup.yml --syntax-check --diff
+ansible-playbook cleanup.yml --list-hosts --diff
 ansible-playbook site.yml --syntax-check --diff
 ansible-playbook site.yml --list-hosts --diff
 ```
 
-## Manual / Runme Installation
+## Manual / Runme
 
-Open [rocm.md](rocm.md) with Runme in a VS Code session connected to the target
-Ubuntu host. Run cells 1.1–1.3 in order and review APT's proposal before accepting
-each installation. The same commands work in a terminal.
-
-Every cell has an explicit Runme name. With the Runme CLI installed, discover
-the cells without executing them:
+Open the notebooks in a VS Code session on the target host. Run named Bash cells
+in order, stopping on any failed command. Review APT's proposal; resolve removals,
+kernel changes and third-party ROCm conflicts separately. The same commands work
+in a terminal.
 
 ```bash
+runme list --filename cleanup.md
 runme list --filename rocm.md
 ```
 
-The notebook contains target-host operations only. Use the Ansible commands above
-on the controller as the alternative installation path.
+## Step Map
 
-## Manual and Ansible Step Map
-
-Both paths install or update `rocminfo` and `rocm-dev`, use the host's APT
-recommendation settings, and verify the `gfx1030` GPU and HIP compiler. Ansible
-uses `state: latest` to match `apt install`; neither path upgrades the whole system.
-If changing the profile in [group_vars/amd_hosts.yml](group_vars/amd_hosts.yml),
-update the manual package names and expected GPU target to match.
-
-| Manual / Runme part | Runme cell | Ansible operation in `roles/rocm/tasks/main.yml` |
+| Notebook part | Role | Operations |
 |---|---|---|
-| 1.1 Install discovery and verify GPU | `rocm-discovery` | `amd.rocm.cache.refresh`, `amd.rocm.discovery.install`, `amd.rocm.inspect.agents` |
-| 1.2 Install libraries and verify compiler | `rocm-development` | `amd.rocm.install`, `amd.rocm.compiler.verify` |
-| 1.3 Reboot | `rocm-reboot` | `amd.rocm.reboot.report` (manual reboot reminder) |
+| cleanup 1.2 Purge | rocm_cleanup | `amd.cleanup.packages.remove` |
+| cleanup 1.3 Verify | rocm_cleanup | `amd.cleanup.roots.verify`, package absence and Vulkan checks |
+| rocm 1.1 Generic tools | development | `development.cache.refresh`, `development.install` |
+| rocm 1.2 Vulkan | development | `development.vulkan.install`, `development.vulkan.verify` |
+| rocm 2.1 Discovery | rocm | `amd.rocm.cache.refresh`, `amd.rocm.discovery.install`, `amd.rocm.inspect.agents` |
+| rocm 2.2 HIP | rocm | `amd.rocm.install`, `amd.rocm.compiler.verify` |
+| rocm 2.3 Python | rocm | `amd.rocm.python.install`, `amd.rocm.python.inspect` |
+| rocm 2.4 Reboot | rocm | `amd.rocm.reboot.report` (manual reminder) |
 
-Stable `ops-step` comments identify the matching tasks beside each notebook cell.
-Ansible additionally validates OS, settings, driver and device access, and simulates
-APT changes before installing. The manual path requires its stated prerequisites
-and operator review of APT's proposal and `rocminfo` output. Ansible may reuse package
-metadata for up to one hour; the manual refresh always updates it.
+Ansible additionally validates settings and prerequisites. APT installations use
+`state: latest`, matching `apt install`, and inherit the host's recommendation
+settings. Installation simulations reject removals, kernel changes and non-Ubuntu
+install candidates. Cleanup rejects removals beyond its explicit package selection.
+Check mode uses existing metadata and skips runtime and post-removal checks.
+Both installation roles may reuse package metadata up to one hour old.
 
-## Compatibility and Validation
+## Compatibility and Acceptance
 
-Official sources reviewed on 2026-10-20. Ubuntu 26.04 documents ROCm 7.1.0 in
-Universe. [Canonical recommends](https://ubuntu.com/blog/amd-rocm-on-ubuntu)
-`rocm-dev` for development libraries and headers; `rocm` provides the full suite.
-The [Ubuntu package](https://packages.ubuntu.com/resolute/rocm-dev) depends on
-`hipcc` and `rocminfo`. Installed versions follow Ubuntu archive updates.
+Sources reviewed on 2026-10-20:
+[Ubuntu ROCm guidance](https://ubuntu.com/blog/amd-rocm-on-ubuntu),
+[ROCm development packages](https://packages.ubuntu.com/resolute/rocm-dev),
+[ROCm PyTorch](https://packages.ubuntu.com/resolute/python3-torch-rocm),
+[AMD product matrix](https://rocm.docs.amd.com/en/latest/compatibility/compatibility-matrix.html),
+[Vulkan build dependencies](https://github.com/ggml-org/llama.cpp/blob/master/docs/build.md#vulkan).
 
-Ubuntu's [hardware notes](https://documentation.ubuntu.com/release-notes/26.04/summary-for-lts-users/#the-amd-rocm-libraries-are-now-available)
-list the RX6900 family's `gfx1030` target with no CI status shown.
-[AMD's current product matrix](https://rocm.docs.amd.com/en/latest/compatibility/compatibility-matrix.html)
-omits RX 6900 XT. Package availability does not establish vendor support or
-application compatibility. GPU execution, application acceptance, and an Ansible
-idempotence run remain pending.
+Ubuntu 26.04 supplies ROCm 7.1 and ROCm-enabled PyTorch 2.9.1. AMD's current product
+matrix does not explicitly list RX 6900 XT. Package availability and the shared
+`gfx1030` architecture do not establish vendor product or framework support.
 
-Keep Ubuntu's existing distribution driver and package sources for this recipe.
-Resolve third-party ROCm conflicts separately. Architecture overrides, driver
-replacements, and global library-path changes require workload evidence.
-AMD's [GPU access guidance](https://rocm.docs.amd.com/en/latest/install/rocm.html#configure-permissions-for-gpu-access)
-uses `render` and `video` group membership by default; establish permissions before
-starting and reconnect after group changes.
+On 2026-10-20, the RX 6900 XT passed a compiled Vulkan compute shader and a compiled
+HIP kernel, each checking 1,024 results. PyTorch `2.9.1+debian` (Ubuntu package
+`2.9.1+dfsg-1~exp2ubuntu2`) passed GPU matrix multiplication against a CPU reference,
+forward/backward computation, finite-gradient checks and an SGD optimizer update
+with the process-local preload below. No GPU driver replacement or reboot was used
+for these checks. Application workloads remain unvalidated.
+The final base playbook rerun completed with `changed=0` and `failed=0`.
+
+Without the preload, GPU allocation succeeded but tensor transfer failed with
+`HIP error: invalid argument`; a zero-fill diagnostic also crashed. HIP diagnostics
+reported `Unable to find target for this triple (no targets are registered)` while
+creating internal blit kernels. Exported LLVM target symbols in `libtorch_cpu` and
+the successful preload trial point to a library-loading conflict. This is a local
+diagnosis, not an upstream-confirmed fix.
+
+Prefix PyTorch commands with `LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libamd_comgr.so.3`.
+The role scopes the same setting to its Python command; it does not alter shell
+profiles or the system loader. Retest without this workaround after package updates.
+The basic checks do not establish compatibility with every training workload.
 
 ## Project Rules
 

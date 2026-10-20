@@ -1,38 +1,82 @@
-# ROCm on Ubuntu 26.04
+# Vulkan and HIP development on Ubuntu 26.04
 
-Install Ubuntu's ROCm development libraries using the existing `amdgpu` driver.
-The verification card is an **RX 6900 XT**, with ROCm target **gfx1030**.
+- **Build tools and Python** provide C/C++ compilation, build systems and isolated Python environments.
+- **Vulkan** provides portable GPU compute through Mesa, with headers and shader compilation tools.
+- **HIP / ROCm** provides AMD's GPU compiler, runtime, math and machine-learning development libraries.
+- **ROCm PyTorch** provides AMD GPU tensors and training through Ubuntu's system Python.
+- **Legacy cleanup (optional)** removes a reviewed old ROCm installation before setting up the new stack; see [cleanup.md](cleanup.md).
 
-Requires Ubuntu 26.04 x86_64, Universe enabled, and user access to `/dev/kfd` and
-the GPU render device. Run these cells on the target host as your normal user.
-Review APT's proposal before accepting; stop on removals or driver/kernel changes.
-Resolve any third-party ROCm conflicts separately.
+For Ubuntu 26.04 x86_64 with Universe enabled, the existing Ubuntu `amdgpu`
+driver, and user access to `/dev/kfd` and the GPU render device. The verification
+card is RX 6900 XT (`gfx1030`). Run as your normal user.
 
-This Runme notebook pairs with [site.yml](site.yml). The default settings are in
-[group_vars/amd_hosts.yml](group_vars/amd_hosts.yml). See the [README](README.md)
-for Ansible usage, official sources, and compatibility limits.
-Status: prepared; not deployed or workload-validated.
+This Runme notebook pairs with [site.yml](site.yml). Review APT's proposal before
+accepting; resolve removals, kernel changes and third-party ROCm conflicts separately.
+Status: installed on the verification card; Vulkan/HIP compute passed. Basic PyTorch
+training passed with the process-local workaround in section 2.3.
 
-## 1. ROCm Development Libraries
+## 1. Generic development libraries
 
-Ansible role: [rocm](roles/rocm/).
+Ansible role: [development](roles/development/). These packages are vendor-neutral.
+APT keeps already-current packages; existing build tools do not need reinstalling.
 
-### 1.1 Install discovery and verify the GPU
+### 1.1 Build tools and Python
 
-Look for a GPU agent with `Name: gfx1030`. Stop if it is missing or access is denied.
+<!-- ops-step
+id: development.cache.refresh
+ansible_task: development.cache.refresh | Refresh Ubuntu package metadata
+kind: package
+-->
+<!-- ops-step
+id: development.install
+ansible_task: development.install | Install generic development tools
+kind: package
+-->
+
+```bash { name=development-tools interactive=true }
+sudo apt update
+sudo apt install build-essential cmake ninja-build git pkgconf libssl-dev python3-dev python3-venv
+```
+
+### 1.2 Vulkan
+
+Vulkan headers and shader tools support compilation. Mesa provides the Vulkan
+driver, including RADV for AMD. Expect the actual GPU in `vulkaninfo`, not only llvmpipe.
+
+<!-- ops-step
+id: development.vulkan.install
+ansible_task: development.vulkan.install | Install generic Vulkan development and Mesa packages
+kind: package
+-->
+<!-- ops-step
+id: development.vulkan.verify
+ansible_task: development.vulkan.verify | Require a hardware Vulkan device
+kind: verify
+-->
+
+```bash { name=vulkan-development interactive=true }
+sudo apt install libvulkan-dev glslc spirv-headers mesa-vulkan-drivers vulkan-tools
+vulkaninfo --summary
+```
+
+## 2. AMD development libraries
+
+Ansible role: [rocm](roles/rocm/). Settings: [group_vars/amd_hosts.yml](group_vars/amd_hosts.yml).
+
+### 2.1 GPU discovery
+
+Expect a GPU agent named `gfx1030`. Stop if it is missing or access is denied.
 
 <!-- ops-step
 id: amd.rocm.cache.refresh
 ansible_task: amd.rocm.cache.refresh | Refresh Ubuntu package metadata
 kind: package
 -->
-
 <!-- ops-step
 id: amd.rocm.discovery.install
 ansible_task: amd.rocm.discovery.install | Install ROCm discovery without removals
 kind: package
 -->
-
 <!-- ops-step
 id: amd.rocm.inspect.agents
 ansible_task: amd.rocm.inspect.agents | Require the expected ROCm GPU agent
@@ -40,26 +84,21 @@ kind: verify
 -->
 
 ```bash { name=rocm-discovery interactive=true }
-# Install discovery
-sudo apt update &&
-sudo apt install rocminfo &&
-# Verify GPU visibility as your normal user
+sudo apt update
+sudo apt install rocminfo
 rocminfo
 ```
 
-### 1.2 Install the development libraries and verify HIP
+### 2.2 HIP compiler and libraries
 
-`rocm-dev` is a metapackage: APT installs HIP (`hipcc`, runtime and headers),
-math libraries such as hipBLAS/rocBLAS and hipFFT/rocFFT, plus MIOpen and RCCL
-development packages. See [Ubuntu's package list](https://packages.ubuntu.com/resolute/rocm-dev).
-AI frameworks such as PyTorch are installed separately for your workload.
+`rocm-dev` installs HIP, headers, hipBLAS/rocBLAS, MIOpen, RCCL and other
+development libraries. `rocm-smi` provides monitoring.
 
 <!-- ops-step
 id: amd.rocm.install
 ansible_task: amd.rocm.install | Install the Ubuntu ROCm development profile
 kind: package
 -->
-
 <!-- ops-step
 id: amd.rocm.compiler.verify
 ansible_task: amd.rocm.compiler.verify | Verify HIP compiler availability
@@ -67,13 +106,38 @@ kind: verify
 -->
 
 ```bash { name=rocm-development interactive=true }
-# Install ROCm development libraries
-sudo apt install rocm-dev &&
-# Verify the HIP compiler
+sudo apt install rocm-dev rocm-smi
 hipcc --version
 ```
 
-### 1.3 Reboot
+### 2.3 AMD PyTorch for Python
+
+Use Ubuntu's ROCm-enabled PyTorch with the system Python. Its dependencies include
+NumPy and the required ROCm runtime libraries. Do not replace it with an unrelated
+`pip install torch` in the same environment.
+
+The tested Ubuntu PyTorch 2.9.1 package needs AMD's compiler library loaded first
+for GPU work. Use the `LD_PRELOAD` prefix below for each PyTorch command; it applies
+only to that process. Ansible uses the matching `rocm_python_preload` setting.
+See the [verification notes](README.md#compatibility-and-acceptance).
+
+<!-- ops-step
+id: amd.rocm.python.install
+ansible_task: amd.rocm.python.install | Install Ubuntu ROCm PyTorch
+kind: package
+-->
+<!-- ops-step
+id: amd.rocm.python.inspect
+ansible_task: amd.rocm.python.inspect | Report the PyTorch environment
+kind: verify
+-->
+
+```bash { name=rocm-python interactive=true }
+sudo apt install python3-torch-rocm
+LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libamd_comgr.so.3 /usr/bin/python3 -m torch.utils.collect_env
+```
+
+### 2.4 Reboot
 
 <!-- ops-step
 id: amd.rocm.reboot.report
@@ -85,8 +149,11 @@ kind: report
 sudo reboot
 ```
 
-Reconnect and repeat `rocminfo`. Ansible prints a manual reboot reminder;
-rerun the playbook after reboot to repeat its checks.
+Reconnect and repeat `vulkaninfo --summary`, `rocminfo` and the PyTorch environment
+report. Ansible prints a reboot reminder; it does not reboot the host.
+Application builds remain outside this recipe. An environment report alone does
+not verify computation; run the intended workload with the same Python prefix.
 
-GPU discovery and compiler availability do not verify computation. Run your intended
-GPU workload before calling the setup validated.
+Sources: [Ubuntu ROCm development packages](https://packages.ubuntu.com/resolute/rocm-dev),
+[Ubuntu ROCm PyTorch](https://packages.ubuntu.com/resolute/python3-torch-rocm),
+[llama.cpp Vulkan and HIP build instructions](https://github.com/ggml-org/llama.cpp/blob/master/docs/build.md).

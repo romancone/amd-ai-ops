@@ -1,0 +1,7 @@
+---
+- name: Remove a reviewed legacy ROCm installation
+  hosts: amd_hosts
+  gather_facts: true
+  become: false
+  roles:
+    - rocm_cleanup

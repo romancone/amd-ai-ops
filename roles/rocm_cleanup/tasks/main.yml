@@ -1,0 +1,170 @@
+---
+- name: amd.cleanup.settings.require | Require an explicit legacy package selection
+  ansible.builtin.assert:
+    that:
+      - ansible_facts.distribution == 'Ubuntu'
+      - rocm_cleanup_packages is mapping
+      - rocm_cleanup_packages | length > 0
+      - rocm_cleanup_packages.keys() | reject('match', '^[a-z0-9][a-z0-9+.-]*$') | list | length == 0
+      - rocm_cleanup_packages.keys() | select('match', '^(linux-|amdgpu-dkms|mesa-|libdrm|vulkan-)') | list | length == 0
+      - rocm_cleanup_packages.values() | select('string') | list | length == rocm_cleanup_packages | length
+      - rocm_cleanup_packages.values() | select('equalto', '') | list | length == 0
+      - rocm_cleanup_roots is sequence and rocm_cleanup_roots is not string
+      - rocm_cleanup_roots | reject('match', '^/opt/rocm-[0-9]+\.[0-9]+\.[0-9]+$') | list | length == 0
+      - rocm_cleanup_files is sequence and rocm_cleanup_files is not string
+    fail_msg: Supply exact reviewed package versions and optional versioned /opt/rocm-X.Y.Z roots in inventory variables.
+
+- name: amd.cleanup.packages.inspect | Read installed package versions
+  ansible.builtin.package_facts:
+    manager: apt
+
+- name: amd.cleanup.versions.require | Protect packages whose versions have changed
+  ansible.builtin.assert:
+    that:
+      - ansible_facts.packages[item.key] | map(attribute='version') | difference([item.value]) | length == 0
+    fail_msg: An installed package differs from the reviewed legacy version; review the cleanup profile again.
+  loop: "{{ rocm_cleanup_packages | dict2items }}"
+  when: item.key in ansible_facts.packages
+
+- name: amd.cleanup.selection | Select installed legacy packages
+  ansible.builtin.set_fact:
+    rocm_cleanup_installed: "{{ rocm_cleanup_packages.keys() | intersect(ansible_facts.packages.keys()) | sort }}"
+
+- name: amd.cleanup.transaction.inspect | Simulate the exact legacy package purge
+  ansible.builtin.command:
+    argv: "{{ ['apt-get', '--simulate', 'purge'] + rocm_cleanup_installed }}"
+  environment:
+    LC_ALL: C
+  register: rocm_cleanup_transaction
+  changed_when: false
+  check_mode: false
+  become: true
+  when: rocm_cleanup_installed | length > 0
+
+- name: amd.cleanup.transaction.require | Reject unrelated package changes
+  ansible.builtin.assert:
+    that:
+      - rocm_cleanup_transaction.stdout is not search('(?m)^Inst ')
+      - rocm_cleanup_transaction.stdout | regex_findall('(?m)^(?:Remv|Purg) ([^ :]+)') | difference(rocm_cleanup_packages.keys() | list) | length == 0
+    fail_msg: APT proposes changes outside the selected legacy packages; review them separately.
+  when: rocm_cleanup_installed | length > 0
+
+- name: amd.cleanup.packages.remove | Purge the reviewed legacy ROCm packages
+  ansible.builtin.apt:
+    name: "{{ rocm_cleanup_installed }}"
+    state: absent
+    purge: true
+    autoremove: false
+    force_apt_get: true
+    auto_install_module_deps: false
+  become: true
+  when: rocm_cleanup_installed | length > 0
+
+- name: amd.cleanup.packages.verify | Refresh installed package facts after cleanup
+  ansible.builtin.package_facts:
+    manager: apt
+  when: not ansible_check_mode
+
+- name: amd.cleanup.absent.require | Require legacy packages to be absent
+  ansible.builtin.assert:
+    that:
+      - rocm_cleanup_packages.keys() | intersect(ansible_facts.packages.keys()) | length == 0
+  when: not ansible_check_mode
+
+- name: amd.cleanup.files.require | Require exact paths inside the selected legacy roots
+  ansible.builtin.assert:
+    that:
+      - item is match('^/opt/rocm-[0-9]+\.[0-9]+\.[0-9]+/[a-zA-Z0-9_./+-]+$')
+      - "'..' not in item"
+      - item | regex_search('^/opt/rocm-[0-9]+\.[0-9]+\.[0-9]+') in rocm_cleanup_roots
+  loop: "{{ rocm_cleanup_files }}"
+
+- name: amd.cleanup.files.inspect | Inspect explicitly selected leftover files
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    get_checksum: false
+    follow: false
+  loop: "{{ rocm_cleanup_files }}"
+  register: rocm_cleanup_file_stats
+  failed_when: rocm_cleanup_file_stats.stat.exists and not (rocm_cleanup_file_stats.stat.isreg | default(false))
+
+- name: amd.cleanup.files.canonical | Reject paths through symbolic links
+  ansible.builtin.command:
+    argv: [realpath, -e, "{{ item.item }}"]
+  loop: "{{ rocm_cleanup_file_stats.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+  register: rocm_cleanup_canonical
+  changed_when: false
+  check_mode: false
+  failed_when: rocm_cleanup_canonical.rc != 0 or rocm_cleanup_canonical.stdout != item.item
+  when: item.stat.exists
+
+- name: amd.cleanup.files.ownership | Reject package-owned leftover files
+  ansible.builtin.command:
+    argv: [dpkg-query, -S, "{{ item.item }}"]
+  loop: "{{ rocm_cleanup_file_stats.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+  register: rocm_cleanup_owner
+  changed_when: false
+  check_mode: false
+  failed_when: rocm_cleanup_owner.rc != 1
+  when: item.stat.exists
+
+- name: amd.cleanup.files.remove | Remove explicitly selected unowned legacy files
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop: "{{ rocm_cleanup_files }}"
+  become: true
+
+- name: amd.cleanup.roots.inspect | Inspect the selected legacy directories
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    get_checksum: false
+    follow: false
+  loop: "{{ rocm_cleanup_roots }}"
+  register: rocm_cleanup_root_stats
+  failed_when: rocm_cleanup_root_stats.stat.exists and not (rocm_cleanup_root_stats.stat.isdir | default(false))
+
+- name: amd.cleanup.directories.remove | Prune empty legacy directories
+  ansible.builtin.command:
+    argv: [find, "{{ item.item }}", -depth, -type, d, -empty, -print, -delete]
+  loop: "{{ rocm_cleanup_root_stats.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+  register: rocm_cleanup_empty_dirs
+  changed_when: rocm_cleanup_empty_dirs.stdout | length > 0
+  become: true
+  when:
+    - not ansible_check_mode
+    - item.stat.exists
+
+- name: amd.cleanup.roots.verify | Check for leftover legacy installation files
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    get_checksum: false
+    follow: false
+  loop: "{{ rocm_cleanup_roots }}"
+  register: rocm_cleanup_root
+  failed_when: rocm_cleanup_root.stat.exists
+  when: not ansible_check_mode
+
+- name: amd.cleanup.report | Report cleanup scope
+  ansible.builtin.debug:
+    msg: Selected legacy packages and unowned files are removed. Any remaining installation files require separate inspection.
+
+- name: amd.cleanup.vulkan.verify | Verify Vulkan hardware remains available
+  ansible.builtin.command:
+    argv: [vulkaninfo, --summary]
+  environment:
+    LC_ALL: C
+  register: rocm_cleanup_vulkan
+  changed_when: false
+  failed_when: >-
+    rocm_cleanup_vulkan.rc != 0 or
+    rocm_cleanup_vulkan.stdout is not search('deviceType\s*=\s*PHYSICAL_DEVICE_TYPE_(DISCRETE|INTEGRATED)_GPU')
+  when:
+    - not ansible_check_mode
+    - rocm_cleanup_verify_vulkan | bool

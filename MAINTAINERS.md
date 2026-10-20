@@ -11,7 +11,8 @@ Keep paired operator paths with the same settings, installation order, and resul
 
 - `README.md` owns quick starts, recipe mapping, and delivery status.
 - `AGENTS.md` owns contribution and recipe conventions.
-- `rocm.md` is the manual pair for `site.yml` and the `rocm` role.
+- `rocm.md` pairs with `site.yml`: generic `development` first, then AMD-specific `rocm`.
+- `cleanup.md` pairs with the separate `cleanup.yml` and reusable `rocm_cleanup` role.
 - `ansible.cfg` selects the ignored `./hosts` inventory.
 - `hosts.example.ini` is the public inventory template; local `host_vars/` stay ignored.
 - `group_vars/all.yml` sets SSH user `ubuntu`.
@@ -19,12 +20,20 @@ Keep paired operator paths with the same settings, installation order, and resul
 
 ## Current Recipe
 
+The `development` role installs generic build/Python tools and Vulkan dependencies.
 The `rocm` role validates the existing distribution driver and compute access,
-installs `rocminfo`, verifies GPU enumeration, and installs Ubuntu's `rocm-dev`.
-It verifies compiler availability and leaves kernel drivers unchanged.
+installs `rocminfo`, verifies GPU enumeration, and installs Ubuntu's `rocm-dev`,
+monitoring tools and ROCm PyTorch. It verifies compiler availability and reports
+the Python environment. Kernel drivers stay unchanged.
 
-Status: prepared; not deployed or workload-validated. Application deployment is
-separate from this library installation recipe.
+Legacy cleanup is opt-in with an exact package/version map in inventory variables.
+It rejects extra APT removals, avoids autoremove and only removes explicitly selected
+unowned regular files and empty directories. It stops on other leftovers.
+No host-specific cleanup selection belongs in role defaults.
+
+Base installation and Vulkan/HIP compute are verified on the initial card.
+Basic PyTorch training is verified only with the process-local compiler preload
+documented in README. No global loader change is made. Application recipes remain deferred.
 
 ## Recipe Alignment
 

@@ -1,7 +1,8 @@
 ---
-- name: Configure Ubuntu AMD ROCm hosts
+- name: Configure Ubuntu AMD development hosts
   hosts: amd_hosts
   gather_facts: true
   become: false
   roles:
+    - development
     - rocm
