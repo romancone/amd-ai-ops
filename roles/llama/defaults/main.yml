@@ -1,0 +1,17 @@
+---
+llama_version: v0.7.0
+llama_commit: 620d2225cc436ab0b001e3200e590e3b286ef9ab
+llama_source_dir: /opt/llama.cpp
+llama_build_jobs: 8
+llama_backend: vulkan
+llama_hip_arch: "{{ rocm_expected_gfx_target }}"
+llama_model_dir: /opt/models/gemma-4-12B-it-Q4_0
+llama_model_file: gemma-4-12B-it-Q4_0.gguf
+llama_model_url: https://huggingface.co/ggml-org/gemma-4-12B-it-GGUF/resolve/a29b2a6b584a5bdcb672ccdcda99ea9faeacc51a/gemma-4-12B-it-Q4_0.gguf
+llama_model_sha256: 3712b9bd32cae83a22f67ee7a4466d8d7a4f21646ac8a07d19bf9418e8767a70
+llama_model_alias: gemma-4-12B-it
+llama_service_user: llama
+llama_state_dir: /var/lib/llama
+llama_port: 8080
+llama_context: 4096
+llama_flash_attention: "off"

@@ -13,6 +13,7 @@ Keep paired operator paths with the same settings, installation order, and resul
 - `AGENTS.md` owns contribution and recipe conventions.
 - `rocm.md` pairs with `site.yml`: generic `development` first, then AMD-specific `rocm`.
 - `cleanup.md` pairs with the separate `cleanup.yml` and reusable `rocm_cleanup` role.
+- `llama.md` pairs with `llama.yml` and the reusable `llama` role after the base install.
 - `ansible.cfg` selects the ignored `./hosts` inventory.
 - `hosts.example.ini` is the public inventory template; local `host_vars/` stay ignored.
 - `group_vars/all.yml` sets SSH user `ubuntu`.
@@ -33,7 +34,14 @@ No host-specific cleanup selection belongs in role defaults.
 
 Base installation and Vulkan/HIP compute are verified on the initial card.
 Basic PyTorch training is verified only with the process-local compiler preload
-documented in README. No global loader change is made. Application recipes remain deferred.
+documented in README. No global loader change is made.
+
+The llama.cpp role pins a source release and a checksummed Gemma 4 12B Q4_0 model,
+builds Vulkan and HIP in separate directories and runs one localhost systemd service.
+Its selected backend must pass API generation and full GPU-layer offload checks.
+Gemma 4 on the initial card requires Flash Attention disabled for HIP; both backend
+defaults use that tested baseline. Keep the manual command and service template aligned.
+Do not apply the Python compiler preload to this standalone C++ service.
 
 ## Recipe Alignment
 

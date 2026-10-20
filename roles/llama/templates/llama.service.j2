@@ -1,0 +1,18 @@
+[Unit]
+Description=llama.cpp - {{ llama_model_alias }} - {{ llama_backend }}
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User={{ llama_service_user }}
+Group={{ llama_service_user }}
+SupplementaryGroups=render video
+Environment=HOME={{ llama_state_dir }}
+WorkingDirectory={{ llama_source_dir }}
+ExecStart={{ llama_source_dir }}/build-{{ llama_backend }}/bin/llama-server --model {{ llama_model_dir }}/{{ llama_model_file }} --alias {{ llama_model_alias }} --ctx-size {{ llama_context }} --parallel 1 --flash-attn {{ llama_flash_attention }} --n-gpu-layers all --host 127.0.0.1 --port {{ llama_port }} --jinja --reasoning-budget 0 --log-verbosity 4
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
