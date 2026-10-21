@@ -2,7 +2,7 @@
 
 Run Gemma 4 12B IT Q4_0 with a 4,096-token context, one request at a time and
 thinking off. The default is HIP with f16/f16 cache and Flash Attention on.
-See the [full benchmark table](README.md#matched-flash-attention-benchmark).
+See the [benchmark tables](BENCHMARK.md) and [model recommendations](MODELS.md).
 
 Complete [rocm.md](rocm.md), then section 1 below. Choose section 3 for HIP
 (default) or section 2 for Vulkan. Run the Bash cells as your normal user; stop if a

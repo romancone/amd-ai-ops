@@ -1,87 +1,97 @@
 # Maintainer Notes
 
-This repository contains public AMD GPU recipes. The RX 6900 XT is the initial
-verification card; select hardware by its ROCm architecture target (`gfx1030`).
-Keep paired operator paths with the same settings, installation order, and result:
+## Contributors
 
-- Concise Markdown commands for manual use and Runme.
-- Reusable Ansible roles with prerequisite, settings, package and runtime validation.
+Read [AGENTS.md](AGENTS.md) for contribution rules, writing style and command
+formatting. Use this file as the source of truth for repository layout,
+recipe-to-role mapping and essential Ansible behavior. Update it when those
+details change; link here instead of repeating them in operator recipes.
 
 ## Layout and Ownership
 
-- `README.md` owns quick starts, recipe mapping, and delivery status.
-- `AGENTS.md` owns contribution and recipe conventions.
-- `rocm.md` pairs with `site.yml`: generic `development` first, then AMD-specific `rocm`.
-- `cleanup.md` pairs with the separate `cleanup.yml` and reusable `rocm_cleanup` role.
-- `llama.md` pairs with `llama.yml` after the base install: common setup, Vulkan, HIP.
-- Inventory's `models` list owns model names, repositories and filenames; revisions and checksums are optional.
-- `model_store` installs `hf` and downloads the list; `llama` serves the entry named by `llama_model`.
-- Optional `models[].mmproj` selects a publisher-provided BF16 projector from the same repository and revision. Other projector precisions are rejected by filename; optional `mmproj_sha256` verifies the chosen artifact.
-- `ansible.cfg` selects the ignored `./hosts` inventory.
-- `hosts.example.ini` is the public inventory template; local `host_vars/` stay ignored.
-- `group_vars/all.yml` sets SSH user `ubuntu`.
-- `group_vars/amd_hosts.yml` holds hardware, packages, the model catalog and service model selection for `amd_hosts`.
+| File | Purpose |
+|---|---|
+| [README.md](README.md) | Quick starts, compatibility and acceptance criteria |
+| [MODELS.md](MODELS.md) | Model selection and recommended parameters |
+| [BENCHMARK.md](BENCHMARK.md) | Measurements, test results and limitations |
+| [cleanup.md](cleanup.md) / [cleanup.yml](cleanup.yml) | Optional ROCm cleanup |
+| [rocm.md](rocm.md) / [site.yml](site.yml) | Generic development tools, then AMD libraries |
+| [llama.md](llama.md) / [llama.yml](llama.yml) | Model service after the base install; common setup, Vulkan and HIP |
+| [ansible.cfg](ansible.cfg) / [hosts.example.ini](hosts.example.ini) | Select ignored `./hosts` inventory / provide its template |
+| [group_vars/all.yml](group_vars/all.yml) | Default SSH user |
+| [group_vars/amd_hosts.yml](group_vars/amd_hosts.yml) | Hardware, packages, `models` catalog and `llama_model` selection |
+| `host_vars/` | Ignored settings for individual hosts |
 
-## Current Recipe
+## Role Behavior
 
-The `development` role installs generic build/Python tools and Vulkan dependencies.
-The `rocm` role validates the existing distribution driver and compute access,
-installs `rocminfo`, verifies GPU enumeration, and installs Ubuntu's `rocm-dev`,
-monitoring tools and ROCm PyTorch. It verifies compiler availability and reports
-the Python environment. Kernel drivers stay unchanged.
+- `development` installs generic build/Python tools and Vulkan dependencies.
+- `rocm` validates the distribution driver and GPU access, installs Ubuntu HIP
+  and PyTorch packages, and checks the compiler and Python environment. The
+  PyTorch preload applies only to its Python command, not the system loader.
+- `rocm_cleanup` discovers installed ROCm packages and leftover package
+  configuration. It permits required UCX, UCC and Open MPI removals, rejects
+  unrelated removals and driver changes, and does not run autoremove. Optional
+  file cleanup removes only explicitly selected, unowned files and empty directories.
+- `model_store` installs `hf` and downloads inventory's `models` list as the SSH
+  login user. Authentication belongs to that user; files remain readable by the
+  service. Existing files are reused unless an optional checksum requires replacement.
+  Downloads use the optional `revision`, or the repository default.
+- `llama` creates the service user before invoking `model_store`, then builds the
+  selected backend and serves the entry named by `llama_model`. Backend builds
+  use separate directories; only one localhost systemd service runs at a time.
+  Model artifacts and selection belong in inventory, not role defaults.
 
-Cleanup discovers ROCm packages from installed source-package metadata, including
-leftover package configuration. It permits APT-required UCX, UCC and Open MPI
-removals but rejects other dependencies and driver changes. It avoids autoremove.
-Optional leftover files and directories remain explicit inventory selections;
-only unowned regular files and empty directories are removed.
+Optional `models[].mmproj` uses the model's repository and revision. Only BF16
+projector filenames are accepted; this does not inspect tensor precision.
+`mmproj_sha256` optionally verifies the artifact. When enabled, the role checks
+that the projector loads on the selected GPU backend.
 
-Base installation and Vulkan/HIP compute are verified on the initial card.
-Basic PyTorch training is verified only with the process-local compiler preload
-documented in README. No global loader change is made.
+Source updates follow the upstream default branch unless overridden. The HIP
+Flash Attention patch applies to `gfx103x`; its kernel also checks the GPU family.
+It uses smaller attention tiles for 256/512-dimensional heads and preserves the
+occupancy assertion. Before an update, remove only the managed patch, then
+reapply it when required. Stop if the patch no longer applies.
 
-The llama.cpp role follows the upstream default branch and builds the selected backend in its own
-directory. HIP is the default; one localhost systemd service runs at a time. Model details belong in inventory's
-`models` list, not role defaults. `llama_model` selects one entry by name; it is a
-string, not the model configuration object. The catalog currently contains one
-Gemma 4 12B Q4_0 entry, and the manual uses that same example throughout.
-Without `sha256`, existing model files are reused. A new download uses the supplied
-`revision`, or the repository default when omitted.
-Create the service user before invoking `model_store`. Downloads belong to the
-login user and remain readable by the service. `hf` authentication also belongs
-to the login user; never put tokens in the catalog.
-The selected backend must pass API generation and full GPU-layer offload checks.
-The confirmed baseline is HIP with f16/f16 cache and Flash Attention on.
-Vulkan also enables Flash Attention. The HIP patch applies only to RDNA2
-targets matching `gfx103x`; the patched kernel also checks the runtime GPU family.
-The patch limits 256/512-dimensional heads to smaller tiles and preserves the
-occupancy assertion. Remove only this managed patch before updating the source,
-then reapply it for HIP on RDNA2. Stop if an upstream change makes it incompatible.
-Keep the manual commands and service template aligned.
-Optional BF16 projector loading and a basic image request passed on HIP and Vulkan.
-The role checks projector GPU placement when enabled. The default microbatch caps
-Gemma's image budget at 512 tokens; broader visual quality remains unverified.
-Do not apply the Python compiler preload to this standalone C++ service.
+## Step Map
 
-## Recipe Alignment
+Update this map with any change to recipe sections, operation IDs or role
+ownership. Keep recipes and tasks aligned in the same change. Validation-only
+tasks remain in Ansible.
 
-Use two-level numbering in Markdown. The llama guide groups shared setup first,
-then gives separate Vulkan and HIP paths; other recipes follow playbook role order.
-Keep stable `ops-step` IDs for included operations. Validation-only tasks remain
-in Ansible; manual recipes do not reproduce its internal checks or bookkeeping.
+| Notebook part | Role | Operations |
+|---|---|---|
+| cleanup 1.2 Purge | rocm_cleanup | `amd.cleanup.packages.remove` |
+| cleanup 1.3 Verify | rocm_cleanup | Package absence and Vulkan checks |
+| cleanup 1.4 Leftovers | rocm_cleanup | `amd.cleanup.files.remove`, `amd.cleanup.directories.remove`, `amd.cleanup.roots.verify` |
+| rocm 1.1 Generic tools | development | `development.cache.refresh`, `development.install` |
+| rocm 1.2 Vulkan | development | `development.vulkan.install`, `development.vulkan.verify` |
+| rocm 2.1 Discovery | rocm | `amd.rocm.cache.refresh`, `amd.rocm.discovery.install`, `amd.rocm.inspect.agents` |
+| rocm 2.2 HIP | rocm | `amd.rocm.install`, `amd.rocm.compiler.verify` |
+| rocm 2.3 Python | rocm | `amd.rocm.python.install`, `amd.rocm.python.inspect` |
+| rocm 2.4 Reboot | rocm | `amd.rocm.reboot.report` (manual reminder) |
+| llama 1.1 Configure the model | llama | `llama.settings.require` |
+| llama 1.2 Service user | llama | `llama.user.create`, `llama.state.prepare` |
+| llama 1.3 Hugging Face CLI | model_store | Install isolated `hf` environment and PATH link |
+| llama 1.4 Model and optional BF16 projector | model_store | `llama.model.prepare`, `llama.model.download`, optional checksums and permissions |
+| llama 1.5 Source | llama | `llama.source.prepare`, `llama.source.checkout` |
+| llama 2.1 Vulkan build | llama | `llama.vulkan.configure`, `llama.vulkan.build`, `llama.backends.verify` |
+| llama 3.1 HIP build | llama | `llama.hip.patch`, `llama.hip.configure`, `llama.hip.build`, `llama.backends.verify` |
+| llama 2.2 / 3.2 Service | llama | `llama.systemd.write`, `llama.systemd.start` |
+| llama 2.3 / 3.3 Inference | llama | `llama.health.verify`, `llama.models.verify`, `llama.inference.verify`, `llama.offload.verify` |
+| llama 4.1 Image example | Manual | Optional image request; visual review by the operator |
 
-The manual recipe uses named Bash cells for Runme, standard Ubuntu commands,
-and one block per numbered logical part. Keep controller
-commands in README and target-host commands in the recipe. README's step map
-connects notebook cells to role operations; keep it current when grouping changes.
+## Validation and Check Mode
 
-Use native Ansible modules and direct tool invocations. Keep roles host-agnostic.
-Do not add tests, embedded scripts, or host-specific package cleanup.
+Installation roles validate prerequisites and settings, use `state: latest` and
+inherit APT's recommendation settings. Package simulations reject removals,
+kernel changes and non-Ubuntu candidates. Cached package metadata may be reused
+for up to one hour. Kernel drivers remain unchanged; reboot is manual.
 
-## Validation
+Check mode uses existing metadata and skips runtime and post-removal checks.
+For `llama`, it previews source, user and service changes. Patching, CLI
+installation, compilation, downloads and inference require a real run and an
+installed base stack.
 
-Use local playbook syntax and inventory checks. Both paths install or update the
-requested packages using the host's APT recommendation settings. The role rejects
-package removals, driver/kernel changes, and non-Ubuntu package installs.
-It skips GPU enumeration and compiler execution in check mode. A real application
-workload and an idempotence run are required before claiming a validated setup.
+A real deployment must pass workload checks and an unchanged rerun before it is
+reported as validated. See [README acceptance criteria](README.md#compatibility-and-acceptance)
+and record results in [BENCHMARK.md](BENCHMARK.md).
