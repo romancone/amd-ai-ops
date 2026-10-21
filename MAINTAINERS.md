@@ -12,7 +12,7 @@ details change; link here instead of repeating them in operator recipes.
 | File | Purpose |
 |---|---|
 | [README.md](README.md) | Quick starts, compatibility and acceptance criteria |
-| [MODELS.md](MODELS.md) | Model selection and recommended parameters |
+| [MODELS.md](MODELS.md) | Model state, recommendations and YAML examples; deployment steps belong in `llama.md` |
 | [BENCHMARK.md](BENCHMARK.md) | Measurements, test results and limitations |
 | [cleanup.md](cleanup.md) / [cleanup.yml](cleanup.yml) | Optional ROCm cleanup |
 | [rocm.md](rocm.md) / [site.yml](site.yml) | Generic development tools, then AMD libraries |
