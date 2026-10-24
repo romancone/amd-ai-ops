@@ -22,6 +22,12 @@
       - llama_service_user != 'root'
       - llama_build_jobs | int > 0
       - llama_context | int >= 512
+      - llama_batch | int > 0
+      - llama_ubatch | int > 0 and llama_ubatch | int <= llama_batch | int
+      - (llama_image_min_tokens is none) == (llama_image_max_tokens is none)
+      - llama_image_min_tokens is none or llama_image_min_tokens | int > 0
+      - llama_image_max_tokens is none or llama_image_max_tokens | int >= llama_image_min_tokens | int
+      - llama_image_max_tokens is none or llama_image_max_tokens | int <= llama_ubatch | int
       - llama_parallel | int > 0
       - llama_context | int % llama_parallel | int == 0
       - llama_port | int > 1024 and llama_port | int < 65536

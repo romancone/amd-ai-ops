@@ -1,0 +1,8 @@
+---
+llama_evaluation_dir: /var/tmp/llama-evaluation
+llama_evaluation_source: /opt/llama.cpp
+llama_evaluation_models: []
+llama_evaluation_service: llama.service
+llama_evaluation_port: 8081
+llama_evaluation_start_utc: ""
+llama_evaluation_retry_from: ""  # Previous run directory; retry only HIP FA occupancy failures

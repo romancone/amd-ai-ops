@@ -28,12 +28,11 @@
   failed_when: llama_current_revision.rc not in [0, 128]
   check_mode: false
 
-- name: Install the RDNA2 Flash Attention patch
-  ansible.builtin.copy:
-    src: hip-rdna2-flash-attention.patch
-    dest: "{{ llama_state_dir }}/hip-rdna2-flash-attention.patch"
-    mode: '0644'
-  become: true
+- name: Inspect the installed Flash Attention patch
+  ansible.builtin.stat:
+    path: "{{ llama_state_dir }}/hip-rdna2-flash-attention.patch"
+    checksum_algorithm: sha1
+  register: llama_installed_patch
   when: not ansible_check_mode
 
 - name: Check whether the managed patch is already applied
@@ -42,15 +41,30 @@
   register: llama_patch_applied
   changed_when: false
   failed_when: llama_patch_applied.rc not in [0, 1]
-  when: not ansible_check_mode and llama_current_revision.rc == 0
+  when:
+    - not ansible_check_mode
+    - llama_current_revision.rc == 0
+    - llama_installed_patch.stat.exists
 
-- name: Remove only the managed patch before a source update
+- name: Remove only the managed patch before a source or patch update
   ansible.builtin.command:
     argv: [git, -C, "{{ llama_source_dir }}", apply, --reverse, "{{ llama_state_dir }}/hip-rdna2-flash-attention.patch"]
+  register: llama_patch_removed
   when:
     - not ansible_check_mode
     - llama_patch_applied.rc | default(1) == 0
-    - llama_current_revision.stdout != llama_target_revision
+    - >-
+      llama_current_revision.stdout != llama_target_revision or
+      llama_installed_patch.stat.checksum !=
+      lookup('file', role_path + '/files/hip-rdna2-flash-attention.patch', rstrip=false) | hash('sha1')
+
+- name: Install the RDNA2 Flash Attention patch
+  ansible.builtin.copy:
+    src: hip-rdna2-flash-attention.patch
+    dest: "{{ llama_state_dir }}/hip-rdna2-flash-attention.patch"
+    mode: '0644'
+  become: true
+  when: not ansible_check_mode
 
 - name: Preview a source update
   ansible.builtin.debug:
@@ -75,4 +89,4 @@
     - not ansible_check_mode
     - llama_backend == 'hip'
     - llama_hip_arch is match('^gfx103[0-9a-f]$')
-    - llama_patch_applied.rc | default(1) != 0 or llama_source is changed
+    - llama_patch_applied.rc | default(1) != 0 or llama_source is changed or llama_patch_removed is changed

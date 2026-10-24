@@ -1,0 +1,13 @@
+{{ {
+  'models': llama_evaluation_models,
+  'source': llama_evaluation_source,
+  'service': llama_evaluation_service,
+  'port': llama_evaluation_port | int,
+  'context': 16384,
+  'benchmark_repetitions': 3,
+  'image_repetitions': 1,
+  'start_utc': llama_evaluation_start_utc,
+  'retry_from': llama_evaluation_retry_from,
+  'backends': ['hip', 'vulkan'],
+  'caches': ['f16', 'q8_0', 'q4_0']
+} | to_nice_json }}

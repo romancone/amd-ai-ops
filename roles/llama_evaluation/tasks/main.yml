@@ -1,0 +1,46 @@
+---
+- name: Validate evaluation settings
+  ansible.builtin.assert:
+    that:
+      - llama_evaluation_models | length > 0
+      - llama_evaluation_dir is match('^/[A-Za-z0-9_./-]+$')
+      - llama_evaluation_port | int > 1024
+      - llama_evaluation_service is match('^[A-Za-z0-9_.-]+$')
+      - llama_evaluation_retry_from == '' or llama_evaluation_retry_from is match('^/[A-Za-z0-9_./-]+$')
+      - llama_evaluation_retry_from != llama_evaluation_dir
+- name: Prepare the evidence directory
+  ansible.builtin.file:
+    path: "{{ llama_evaluation_dir }}"
+    state: directory
+    mode: '0755'
+- name: Copy evaluation runner
+  ansible.builtin.copy:
+    src: run.py
+    dest: "{{ llama_evaluation_dir }}/run.py"
+    mode: '0755'
+- name: Copy reference images
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/media/qengineering/"
+    dest: "{{ llama_evaluation_dir }}/media/"
+    mode: '0644'
+- name: Copy image rubric
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/evaluation/images.json"
+    dest: "{{ llama_evaluation_dir }}/images.json"
+    mode: '0644'
+- name: Write the test manifest
+  ansible.builtin.template:
+    src: manifest.json.j2
+    dest: "{{ llama_evaluation_dir }}/manifest.json"
+    mode: '0644'
+- name: Run the resumable evaluation
+  ansible.builtin.command:
+    argv: [python3, "{{ llama_evaluation_dir }}/run.py"]
+    chdir: "{{ llama_evaluation_dir }}"
+  async: 43200
+  poll: 0
+  register: llama_evaluation_job
+  when: not ansible_check_mode
+- name: Report evaluation job
+  ansible.builtin.debug:
+    var: llama_evaluation_job

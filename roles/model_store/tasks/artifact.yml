@@ -22,7 +22,7 @@
       not model_existing.stat.exists or
       (artifact_sha256 | length > 0 and model_existing.stat.checksum | default('') != artifact_sha256)
 
-- name: Verify the downloaded file checksum
+- name: model_store.artifact.verify | Verify the downloaded file checksum
   ansible.builtin.stat:
     path: "{{ model_store_root }}/{{ model.name }}/{{ artifact_file }}"
     checksum_algorithm: sha256
@@ -30,7 +30,7 @@
   failed_when: model_verified.stat.checksum | default('') != artifact_sha256
   when: not ansible_check_mode and artifact_sha256 | length > 0
 
-- name: Make the downloaded file readable by the service
+- name: model_store.artifact.permissions | Make the downloaded file readable by the service
   ansible.builtin.file:
     path: "{{ model_store_root }}/{{ model.name }}/{{ artifact_file }}"
     mode: '0644'

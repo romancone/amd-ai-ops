@@ -1,0 +1,6 @@
+---
+- name: Evaluate llama.cpp text and images
+  hosts: amd_hosts
+  gather_facts: false
+  roles:
+    - llama_evaluation

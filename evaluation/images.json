@@ -1,0 +1,26 @@
+[
+  {"id":"ChineseWall","file":"ChineseWall.jpg","prompt":"Identify this place and explain its history. Mention visible architectural features. Be concise and do not guess the exact section.","criteria":[
+    ["Great Wall of China",40,"great wall"],
+    ["Defensive purpose",15,"defen|invasi|protect|fortif"],
+    ["Built across dynasties",15,"dynasties|centuries|different periods|(?s:qin.*ming|ming.*qin)"],
+    ["Ming masonry",15,"ming"],
+    ["Visible towers or battlements",15,"watchtower|watch tower|battlement|crenellat"]]},
+  {"id":"Singapore","file":"Singapore.jpg","prompt":"Which city is this? Identify the visible landmarks and describe their positions briefly.","criteria":[
+    ["Singapore",40,"singapore"],
+    ["Marina Bay Sands",20,"marina bay sands"],
+    ["Singapore Flyer",15,"singapore flyer|observation wheel|ferris wheel"],
+    ["ArtScience Museum",15,"artscience|art science|lotus.shaped"],
+    ["Waterfront",10,"waterfront|body of water|water in|reflec|bay(?! sands)"]]},
+  {"id":"Titanic","file":"Titanic.jpg","prompt":"Which movie is this? Explain the visible scene briefly without inventing dialogue.","criteria":[
+    ["Titanic",40,"titanic"],
+    ["Jack and Rose",20,"(?s)(jack.*rose|rose.*jack)"],
+    ["Ship bow",15,"bow|front of the ship"],
+    ["Outstretched arms",15,"outstretch|arms.*(spread|extend|open)|(?:spread|extend|stretch).*arms"],
+    ["Sunset and ocean",10,"sunset|ocean|sea\\b"]]},
+  {"id":"Pizza","file":"Pizza.jpg","prompt":"What ingredients are needed to make this pizza? Separate dough ingredients from toppings. Do not invent toppings that are not visible.","criteria":[
+    ["Flour and water",20,"(?s)(flour.*water|water.*flour)"],
+    ["Yeast and salt",20,"(?s)(yeast.*salt|salt.*yeast)"],
+    ["Tomato",20,"tomato"],
+    ["Mozzarella",20,"mozzarella"],
+    ["Basil",20,"basil"]]}
+]

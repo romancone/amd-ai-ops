@@ -44,9 +44,8 @@ ansible-playbook site.yml --diff
 Reboot the host manually, reconnect and repeat the GPU checks. Settings live in
 [group_vars/amd_hosts.yml](group_vars/amd_hosts.yml).
 
-After verifying the base, configure the model in
-[group_vars/amd_hosts.yml](group_vars/amd_hosts.yml). The catalog includes
-Gemma 4 12B IT Q4_0; inline comments explain the optional settings.
+After verifying the base, choose a [model configuration](MODELS.md) and apply
+it in [group_vars/amd_hosts.yml](group_vars/amd_hosts.yml).
 
 Optional: save your backend choice in `host_vars/<inventory_hostname>.yml`:
 
@@ -126,15 +125,15 @@ Acceptance criteria:
 | Images (optional) | The BF16 projector loads on the selected GPU backend and the response identifies the image's main content. |
 | Ansible rerun | An unchanged setup finishes without failures or changes. |
 
-Latest test: **2026-10-21** — llama.cpp text and BF16 image inference on HIP and Vulkan.
 These basic checks do not establish long-context accuracy, concurrent serving
 capacity or compatibility with every training workload.
 
 ## Models and Benchmarks
 
-See [MODELS.md](MODELS.md) for model settings and [BENCHMARK.md](BENCHMARK.md)
-for measurements and test limitations. Optional BF16 projector setup and an
-image example are in [llama.md](llama.md#4-images-optional).
+- [Models](MODELS.md): descriptions, download sizes and configuration examples.
+- [Benchmarks](BENCHMARK.md): measurements and conclusions.
+- [HTML summary](reports/index.html) and [interactive results](reports/report.html): comparisons and saved image answers.
+- [Evaluation workflow](evaluation/README.md): run benchmarks, score answers and generate reports.
 
 ## Project Rules
 

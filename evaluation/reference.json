@@ -1,0 +1,41 @@
+{
+  "model": "gpt-6-luna",
+  "access": "Codex model-selected evaluator",
+  "reference_status": "Model-generated reference normalized to 100; not verified absolute truth.",
+  "rubric": {
+    "dimensions": {
+      "correctness": 40,
+      "visual_detail": 30,
+      "completeness": 20,
+      "clarity": 10
+    },
+    "per_image_grading_anchors": {
+      "ChineseWall": "Correctly identifies the Great Wall of China; gives concise, broadly accurate defensive/history context; notes visible stone/brick wall, towers, and crenellated parapets; avoids claiming a specific section.",
+      "Singapore": "Identifies Singapore; names Marina Bay Sands, Singapore Flyer, and ArtScience Museum; places them left, right, and near the center respectively, with the bay/waterfront in front.",
+      "Titanic": "Identifies Titanic; describes Jack and Rose at the ship's bow with arms outstretched, against the sunset and ocean; invents no dialogue or extra action.",
+      "Pizza": "Separates dough ingredients (flour, water, yeast, salt) from visible toppings (tomato, mozzarella, basil); adds no unseen topping."
+    }
+  },
+  "answers": {
+    "ChineseWall": {
+      "prompt": "Identify this place and explain its history. Mention visible architectural features. Be concise and do not guess the exact section.",
+      "text": "This is the Great Wall of China, a system of fortifications built and rebuilt across multiple dynasties to defend China's northern frontier. The pictured stretch has substantial stone and brick walls, stairways, crenellated parapets, and several watchtowers."
+    },
+    "Singapore": {
+      "prompt": "Which city is this? Identify the visible landmarks and describe their positions briefly.",
+      "text": "This is Singapore. Marina Bay Sands stands on the left, the lotus-shaped ArtScience Museum is near the center, and the Singapore Flyer rises on the right. The waterfront and bay fill the foreground."
+    },
+    "Titanic": {
+      "prompt": "Which movie is this? Explain the visible scene briefly without inventing dialogue.",
+      "text": "This is Titanic. Jack stands behind Rose at the ship's bow as she stretches both arms outward, with the ocean and a warm sunset behind them."
+    },
+    "Pizza": {
+      "prompt": "What ingredients are needed to make this pizza? Separate dough ingredients from toppings. Do not invent toppings that are not visible.",
+      "text": "Dough: flour, water, yeast, and salt. Toppings: tomato sauce, mozzarella, and basil."
+    }
+  },
+  "reference_score": 100,
+  "scoring_method": "Independent image-based semantic review. Checklist coverage does not contribute to quality.",
+  "evaluation_date": "2026-10-22 (Europe/Luxembourg)",
+  "reference_agent": "/root/luna_reference"
+}

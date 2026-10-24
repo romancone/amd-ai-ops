@@ -1,19 +1,20 @@
 # llama.cpp with Vulkan and HIP
 
-Run Gemma 4 12B IT Q4_0 with a 4,096-token context, one request at a time and
-thinking off. The default is HIP with f16/f16 cache and Flash Attention on.
-See the [benchmark tables](BENCHMARK.md) and [model recommendations](MODELS.md).
+Build and serve Gemma 4 12B IT Q4_0. Complete [rocm.md](rocm.md), then section 1
+and section 3 for the default HIP backend. Section 2 provides Vulkan.
+Alternative model configurations are in [MODELS.md](MODELS.md).
 
-Complete [rocm.md](rocm.md), then section 1 below. Choose section 3 for HIP
-(default) or section 2 for Vulkan. Run the Bash cells as your normal user; stop if a
-command fails. Run from this repository directory so the HIP patch file is available.
-Install `curl` with `sudo apt install curl` if it is missing.
+Run the Bash cells as your normal user; stop if a command fails. Run from this
+repository directory so the HIP patch file is available. Install `curl` with
+`sudo apt install curl` if it is missing.
 
 ## 1. Common setup
 
 ### 1.1 Configure the model
 
-Set the model and service options below for manual/Runme installation:
+These settings match the llama role defaults and the Gemma entry in
+[group_vars/amd_hosts.yml](group_vars/amd_hosts.yml). For another model, replace
+the model profile below with its Bash configuration from [MODELS.md](MODELS.md).
 
 <!-- ops-step
 id: llama.settings
@@ -25,36 +26,33 @@ kind: variables
 export LLAMA_SOURCE=/opt/llama.cpp
 export LLAMA_JOBS=8
 export LLAMA_GPU_ARCH=gfx1030
-export LLAMA_MODEL_ID=gemma-4-12B-it-Q4_0
-export LLAMA_MODEL_REPO=ggml-org/gemma-4-12B-it-GGUF
-export LLAMA_MODEL_FILE=gemma-4-12B-it-Q4_0.gguf
-# export LLAMA_MMPROJ=mmproj-gemma-4-12B-it-BF16.gguf  # Optional images; BF16 only
-export LLAMA_MODEL_DIR=/opt/models/$LLAMA_MODEL_ID
 export LLAMA_SERVICE_USER=llama
 export LLAMA_STATE_DIR=/var/lib/llama
 export LLAMA_HIP_PATCH=$LLAMA_STATE_DIR/hip-rdna2-flash-attention.patch
-export LLAMA_CONTEXT=4096
+export LLAMA_PORT=8080
+
+# Default model profile
+export LLAMA_MODEL_ID=gemma-4-12B-it-Q4_0
+export LLAMA_MODEL_REPO=ggml-org/gemma-4-12B-it-GGUF
+export LLAMA_MODEL_FILE=gemma-4-12B-it-Q4_0.gguf
+unset LLAMA_MMPROJ
+# export LLAMA_MMPROJ=mmproj-gemma-4-12B-it-BF16.gguf  # Optional images
+export LLAMA_CONTEXT=16384
 export LLAMA_PARALLEL=1
+export LLAMA_BATCH=2048
+export LLAMA_UBATCH=1152
+export LLAMA_IMAGE_MIN_TOKENS=70
+export LLAMA_IMAGE_MAX_TOKENS=1120
 export LLAMA_CACHE_TYPE_K=f16
 export LLAMA_CACHE_TYPE_V=f16
-export LLAMA_PORT=8080
+export LLAMA_FLASH_ATTENTION=on
+export LLAMA_BACKEND=hip
+
+export LLAMA_MODEL_DIR=/opt/models/$LLAMA_MODEL_ID
 ```
 
-**Ansible alternative:** set your model in
-[group_vars/amd_hosts.yml](group_vars/amd_hosts.yml):
-
-```yaml
-models:  # Models to download
-  - name: gemma-4-12B-it-Q4_0
-    repo: ggml-org/gemma-4-12B-it-GGUF
-    file: gemma-4-12B-it-Q4_0.gguf
-    # mmproj: mmproj-gemma-4-12B-it-BF16.gguf  # Optional images; BF16 only
-    # mmproj_sha256: 9b1edfa05b634728ca4bfd60b4e6b278e95166c078fa54ae4fa83e680112fd1d  # Optional projector checksum
-    # revision: a29b2a6b584a5bdcb672ccdcda99ea9faeacc51a  # Optional version pin
-    # sha256: 3712b9bd32cae83a22f67ee7a4466d8d7a4f21646ac8a07d19bf9418e8767a70  # Optional checksum
-
-llama_model: gemma-4-12B-it-Q4_0  # Name of the model to serve
-```
+**Ansible:** the same Gemma profile is already selected in inventory.
+Deployment commands are in [README.md](README.md#ansible).
 
 ### 1.2 Create the service user
 
@@ -84,6 +82,17 @@ sudo install -d -m 755 -o "$LLAMA_SERVICE_USER" -g "$LLAMA_SERVICE_USER" "$LLAMA
 
 Install `hf` in a separate Python environment. `rocm.md` installs `python3-venv`.
 
+<!-- ops-step
+id: model_store.hf.install
+ansible_task: model_store.hf.install | Install hf in its own Python environment
+kind: command
+-->
+<!-- ops-step
+id: model_store.hf.link
+ansible_task: model_store.hf.link | Make hf available on PATH
+kind: file
+-->
+
 ```bash { name=llama-hf }
 sudo python3 -m venv /opt/huggingface
 sudo /opt/huggingface/bin/pip install huggingface_hub
@@ -94,10 +103,9 @@ Optional: run `hf auth login` without `sudo` to sign in to Hugging Face and get
 higher download limits. Keep your token out of the YAML file.
 The download command below enables high-performance mode to help download faster.
 
-### 1.4 Download Gemma 4 12B
+### 1.4 Download the selected model
 
-Download the text model and optional BF16 projector. Skip downloads for files
-that already exist, as Ansible does. Both files use the same repository and revision.
+Download missing model and optional BF16 projector files from the same repository.
 
 <!-- ops-step
 id: llama.model.prepare
@@ -110,18 +118,28 @@ ansible_task: llama.model.download | Download the model with hf
 kind: command
 -->
 
+<!-- ops-step
+id: model_store.artifact.permissions
+ansible_task: model_store.artifact.permissions | Make the downloaded file readable by the service
+kind: file
+-->
+
 ```bash { name=llama-model }
 sudo install -d -m 755 -o "$USER" "$LLAMA_MODEL_DIR"
-HF_XET_HIGH_PERFORMANCE=1 hf download \
-  "$LLAMA_MODEL_REPO" \
-  "$LLAMA_MODEL_FILE" \
-  --local-dir "$LLAMA_MODEL_DIR"
-chmod 644 "$LLAMA_MODEL_DIR/$LLAMA_MODEL_FILE"
-if [ -n "${LLAMA_MMPROJ:-}" ]; then
+if [ ! -f "$LLAMA_MODEL_DIR/$LLAMA_MODEL_FILE" ]; then
   HF_XET_HIGH_PERFORMANCE=1 hf download \
     "$LLAMA_MODEL_REPO" \
-    "$LLAMA_MMPROJ" \
+    "$LLAMA_MODEL_FILE" \
     --local-dir "$LLAMA_MODEL_DIR"
+fi
+chmod 644 "$LLAMA_MODEL_DIR/$LLAMA_MODEL_FILE"
+if [ -n "${LLAMA_MMPROJ:-}" ]; then
+  if [ ! -f "$LLAMA_MODEL_DIR/$LLAMA_MMPROJ" ]; then
+    HF_XET_HIGH_PERFORMANCE=1 hf download \
+      "$LLAMA_MODEL_REPO" \
+      "$LLAMA_MMPROJ" \
+      --local-dir "$LLAMA_MODEL_DIR"
+  fi
   chmod 644 "$LLAMA_MODEL_DIR/$LLAMA_MMPROJ"
 fi
 ```
@@ -135,17 +153,21 @@ curl -fL \
   -o "$LLAMA_MODEL_DIR/$LLAMA_MODEL_FILE"
 ```
 
+<!-- ops-step
+id: model_store.artifact.verify
+ansible_task: model_store.artifact.verify | Verify the downloaded file checksum
+kind: verify
+-->
+
 Optional download settings:
 
 - `revision`: add `--revision VALUE` to `hf`, or replace `main` in the curl URL.
 - `sha256`: run `echo 'EXPECTED_SHA256  /path/to/model.gguf' | sha256sum -c -`.
   If it fails, add `--force-download` to the download command and recheck.
 
-Apply the same revision to both downloads. `mmproj_sha256` checks the projector
-in the same way as `sha256` checks the model.
-
-Ansible replaces files that fail the checksum. Without a checksum, it keeps existing
-files. To download a different revision, remove the old file or supply its new checksum.
+Use the same revision for both files; `mmproj_sha256` checks the projector.
+Ansible replaces files with mismatched checksums and otherwise keeps existing
+files. To change revision, remove the old file or supply its new checksum.
 
 ### 1.5 Get llama.cpp
 
@@ -205,7 +227,6 @@ kind: verify
 -->
 
 ```bash { name=llama-build-vulkan }
-export LLAMA_FLASH_ATTENTION=on
 cmake \
   -S "$LLAMA_SOURCE" \
   -B "$LLAMA_SOURCE/build-vulkan" \
@@ -233,15 +254,21 @@ ansible_task: llama.systemd.write | Write the selected backend service
 kind: file
 -->
 <!-- ops-step
+id: llama.systemd.reload
+ansible_task: llama.systemd.reload | Apply service changes
+kind: command
+-->
+<!-- ops-step
 id: llama.systemd.start
 ansible_task: llama.systemd.start | Enable and start llama.cpp
 kind: command
 -->
 
 ```bash { name=llama-service-vulkan }
+export LLAMA_BACKEND=vulkan
 sudo tee /etc/systemd/system/llama.service >/dev/null <<EOF
 [Unit]
-Description=llama.cpp - $LLAMA_MODEL_ID - vulkan
+Description=llama.cpp - $LLAMA_MODEL_ID - $LLAMA_BACKEND
 After=network-online.target
 Wants=network-online.target
 
@@ -252,12 +279,16 @@ Group=$LLAMA_SERVICE_USER
 SupplementaryGroups=render video
 Environment=HOME=$LLAMA_STATE_DIR
 WorkingDirectory=$LLAMA_SOURCE
-ExecStart=$LLAMA_SOURCE/build-vulkan/bin/llama-server \
+ExecStart=$LLAMA_SOURCE/build-$LLAMA_BACKEND/bin/llama-server \
   --model $LLAMA_MODEL_DIR/$LLAMA_MODEL_FILE \
   ${LLAMA_MMPROJ:+--mmproj $LLAMA_MODEL_DIR/$LLAMA_MMPROJ} \
   --alias $LLAMA_MODEL_ID \
   --ctx-size $LLAMA_CONTEXT \
   --parallel $LLAMA_PARALLEL \
+  --batch-size $LLAMA_BATCH \
+  --ubatch-size $LLAMA_UBATCH \
+  ${LLAMA_IMAGE_MIN_TOKENS:+--image-min-tokens $LLAMA_IMAGE_MIN_TOKENS} \
+  ${LLAMA_IMAGE_MAX_TOKENS:+--image-max-tokens $LLAMA_IMAGE_MAX_TOKENS} \
   --flash-attn $LLAMA_FLASH_ATTENTION \
   --cache-type-k $LLAMA_CACHE_TYPE_K \
   --cache-type-v $LLAMA_CACHE_TYPE_V \
@@ -300,6 +331,11 @@ ansible_task: llama.inference.verify | Verify text generation
 kind: verify
 -->
 <!-- ops-step
+id: llama.service.inspect
+ansible_task: llama.service.inspect | Identify the current service invocation
+kind: verify
+-->
+<!-- ops-step
 id: llama.offload.verify
 ansible_task: llama.offload.verify | Require all model layers on the selected GPU backend
 kind: verify
@@ -322,10 +358,8 @@ sudo journalctl \
 
 ### 3.1 Build
 
-Build HIP for RX 6900 XT (`gfx1030`) in a separate directory from Vulkan.
-The included patch selects smaller attention tiles only on RDNA2 (`gfx103x`).
-It keeps the occupancy assertion and enables Flash Attention for Gemma's
-256/512 head sizes.
+Build HIP for RX 6900 XT (`gfx1030`). The included RDNA2 Flash Attention fix
+is applied before compilation. [Patch details](MAINTAINERS.md#role-behavior).
 
 <!-- ops-step
 id: llama.hip.patch
@@ -333,6 +367,11 @@ ansible_task: llama.hip.patch | Apply the RDNA2 Flash Attention tile fix
 kind: command
 -->
 
+<!-- ops-step
+id: llama.compiler.locate
+ansible_task: llama.compiler.locate | Locate the Ubuntu HIP compiler and runtime
+kind: command
+-->
 <!-- ops-step
 id: llama.hip.configure
 ansible_task: llama.hip.configure | Configure the HIP build
@@ -344,10 +383,20 @@ ansible_task: llama.hip.build | Build the HIP binaries
 kind: command
 -->
 
+<!-- ops-step
+id: llama.backends.verify.hip
+ansible_task: llama.backends.verify | Require a GPU in the selected build
+kind: verify
+-->
+
 ```bash { name=llama-build-hip }
-export LLAMA_FLASH_ATTENTION=on
 if [[ "$LLAMA_GPU_ARCH" =~ ^gfx103[0-9a-f]$ ]]; then
-  sudo install -m 644 roles/llama/files/hip-rdna2-flash-attention.patch "$LLAMA_HIP_PATCH"
+  if ! cmp -s roles/llama/files/hip-rdna2-flash-attention.patch "$LLAMA_HIP_PATCH"; then
+    if git -C "$LLAMA_SOURCE" apply --reverse --check "$LLAMA_HIP_PATCH" 2>/dev/null; then
+      git -C "$LLAMA_SOURCE" apply --reverse "$LLAMA_HIP_PATCH"
+    fi
+    sudo install -m 644 roles/llama/files/hip-rdna2-flash-attention.patch "$LLAMA_HIP_PATCH"
+  fi
   if ! git -C "$LLAMA_SOURCE" apply --reverse --check "$LLAMA_HIP_PATCH" 2>/dev/null; then
     git -C "$LLAMA_SOURCE" apply "$LLAMA_HIP_PATCH"
   fi
@@ -375,10 +424,27 @@ upstream update, stop and review it before building.
 
 Start the service with the HIP build. This also switches an existing Vulkan service to HIP.
 
+<!-- ops-step
+id: llama.systemd.write.hip
+ansible_task: llama.systemd.write | Write the selected backend service
+kind: file
+-->
+<!-- ops-step
+id: llama.systemd.reload.hip
+ansible_task: llama.systemd.reload | Apply service changes
+kind: command
+-->
+<!-- ops-step
+id: llama.systemd.start.hip
+ansible_task: llama.systemd.start | Enable and start llama.cpp
+kind: command
+-->
+
 ```bash { name=llama-service-hip }
+export LLAMA_BACKEND=hip
 sudo tee /etc/systemd/system/llama.service >/dev/null <<EOF
 [Unit]
-Description=llama.cpp - $LLAMA_MODEL_ID - hip
+Description=llama.cpp - $LLAMA_MODEL_ID - $LLAMA_BACKEND
 After=network-online.target
 Wants=network-online.target
 
@@ -389,12 +455,16 @@ Group=$LLAMA_SERVICE_USER
 SupplementaryGroups=render video
 Environment=HOME=$LLAMA_STATE_DIR
 WorkingDirectory=$LLAMA_SOURCE
-ExecStart=$LLAMA_SOURCE/build-hip/bin/llama-server \
+ExecStart=$LLAMA_SOURCE/build-$LLAMA_BACKEND/bin/llama-server \
   --model $LLAMA_MODEL_DIR/$LLAMA_MODEL_FILE \
   ${LLAMA_MMPROJ:+--mmproj $LLAMA_MODEL_DIR/$LLAMA_MMPROJ} \
   --alias $LLAMA_MODEL_ID \
   --ctx-size $LLAMA_CONTEXT \
   --parallel $LLAMA_PARALLEL \
+  --batch-size $LLAMA_BATCH \
+  --ubatch-size $LLAMA_UBATCH \
+  ${LLAMA_IMAGE_MIN_TOKENS:+--image-min-tokens $LLAMA_IMAGE_MIN_TOKENS} \
+  ${LLAMA_IMAGE_MAX_TOKENS:+--image-max-tokens $LLAMA_IMAGE_MAX_TOKENS} \
   --flash-attn $LLAMA_FLASH_ATTENTION \
   --cache-type-k $LLAMA_CACHE_TYPE_K \
   --cache-type-v $LLAMA_CACHE_TYPE_V \
@@ -424,13 +494,11 @@ onto `ROCm0` and `flash_attn = enabled`. To switch back to Vulkan, follow sectio
 
 ### 4.1 Describe a JPEG
 
-Use this after enabling the BF16 projector in section 1.1, downloading it and
-starting either backend. For an existing installation, rerun `llama-model` and
-its backend's service cell. Ansible includes the projector only when `mmproj`
-is set in the selected catalog entry; rerun `llama.yml` to apply it.
-Both backends passed a basic image request with this BF16 projector. When enabled,
-logs should show `loaded multimodal model` and `CLIP using ROCm0` or `Vulkan0`.
-The default microbatch limits Gemma's image budget to 512 tokens.
+Uncomment `LLAMA_MMPROJ` in section 1.1, then run `llama-settings`,
+`llama-model` and your backend's service cell. For Ansible, enable `mmproj`
+in the selected catalog entry and run `ansible-playbook llama.yml --diff`.
+Logs should show `loaded multimodal model` and `CLIP using ROCm0` or `Vulkan0`.
+For repeatable evaluation, see [evaluation/README.md](evaluation/README.md).
 
 ```bash { name=llama-image }
 IMAGE_FILE=/path/to/image.jpg
@@ -457,7 +525,6 @@ to text-only serving, unset `LLAMA_MMPROJ` and rerun the service cell, or remove
 `mmproj` from the catalog and rerun Ansible.
 
 Sources: [multimodal support](https://github.com/ggml-org/llama.cpp/blob/master/docs/multimodal.md),
-[BF16 projector](https://huggingface.co/ggml-org/gemma-4-12B-it-GGUF/blob/main/mmproj-gemma-4-12B-it-BF16.gguf),
 [build instructions](https://github.com/ggml-org/llama.cpp/blob/master/docs/build.md),
 [CMake options](https://github.com/ggml-org/llama.cpp/blob/master/ggml/CMakeLists.txt),
 [server options](https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md),

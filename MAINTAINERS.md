@@ -3,24 +3,32 @@
 ## Contributors
 
 Read [AGENTS.md](AGENTS.md) for contribution rules, writing style and command
-formatting. Use this file as the source of truth for repository layout,
-recipe-to-role mapping and essential Ansible behavior. Update it when those
-details change; link here instead of repeating them in operator recipes.
+formatting. Roles define installation and service behavior; inventory supplies
+model and host values. This file documents that implementation and maps it to
+the manual recipes.
 
 ## Layout and Ownership
 
 | File | Purpose |
 |---|---|
-| [README.md](README.md) | Quick starts, compatibility and acceptance criteria |
-| [MODELS.md](MODELS.md) | Model state, recommendations and YAML examples; deployment steps belong in `llama.md` |
-| [BENCHMARK.md](BENCHMARK.md) | Measurements, test results and limitations |
+| [AGENTS.md](AGENTS.md) | Contribution rules and temporary internal evidence pointers |
+| [README.md](README.md) | Quick starts, compatibility, acceptance criteria and a short changelog |
+| [MODELS.md](MODELS.md) | Model descriptions, file sizes and complete Ansible/Runme profiles for every model, including the current default |
+| [BENCHMARK.md](BENCHMARK.md) | Measured settings, results, comparisons, conclusions and limitations |
+| [reports/](reports/) | HTML views of benchmark conclusions (`index.html`) and saved results (`report.html`); no independent configuration guidance |
+| [evaluation/](evaluation/) / [evaluation.yml](evaluation.yml) | Evaluation runner, scoring inputs and report-generation sources; HTML output lives in `reports/`, raw logs stay outside the repository |
 | [cleanup.md](cleanup.md) / [cleanup.yml](cleanup.yml) | Optional ROCm cleanup |
 | [rocm.md](rocm.md) / [site.yml](site.yml) | Generic development tools, then AMD libraries |
-| [llama.md](llama.md) / [llama.yml](llama.yml) | Model service after the base install; common setup, Vulkan and HIP |
+| [llama.md](llama.md) / [llama.yml](llama.yml) | Current default model recipe and role entry point; alternatives link to MODELS.md |
+| [roles/](roles/) | Source of truth for task order, supported settings, service arguments and verification |
 | [ansible.cfg](ansible.cfg) / [hosts.example.ini](hosts.example.ini) | Select ignored `./hosts` inventory / provide its template |
 | [group_vars/all.yml](group_vars/all.yml) | Default SSH user |
-| [group_vars/amd_hosts.yml](group_vars/amd_hosts.yml) | Hardware, packages, `models` catalog and `llama_model` selection |
+| [group_vars/amd_hosts.yml](group_vars/amd_hosts.yml) | Active Ansible values: hardware, packages, model catalog and serving selection; documentation mirrors these values |
 | `host_vars/` | Ignored settings for individual hosts |
+
+Keep each model's complete configuration in MODELS.md when the default changes.
+The default profile is intentionally repeated in llama.md so the recipe works
+on its own. Keep both copies aligned with role behavior and inventory values.
 
 ## Role Behavior
 
@@ -40,23 +48,39 @@ details change; link here instead of repeating them in operator recipes.
   selected backend and serves the entry named by `llama_model`. Backend builds
   use separate directories; only one localhost systemd service runs at a time.
   Model artifacts and selection belong in inventory, not role defaults.
+- `llama_evaluation` runs the requested matrix serially with supplied model paths.
+  It preserves completed results and attempts to restart the service if it was
+  active before the run. Workflow and scoring: [evaluation/README.md](evaluation/README.md).
+  HIP FA occupancy failures get separate FA-off retries. Quantized V-cache
+  combinations rejected without FA are recorded as unsupported.
 
 Optional `models[].mmproj` uses the model's repository and revision. Only BF16
 projector filenames are accepted; this does not inspect tensor precision.
-`mmproj_sha256` optionally verifies the artifact. When enabled, the role checks
-that the projector loads on the selected GPU backend.
+`mmproj_sha256` optionally verifies the artifact. Optional image minimum/maximum
+token settings must be supplied together and fit within `llama_ubatch`;
+`llama_batch` must be at least `llama_ubatch`. Model-specific image budgets
+live in inventory and [MODELS.md](MODELS.md). When a projector is enabled,
+the role checks that it loads on the selected GPU backend.
 
 Source updates follow the upstream default branch unless overridden. The HIP
 Flash Attention patch applies to `gfx103x`; its kernel also checks the GPU family.
-It uses smaller attention tiles for 256/512-dimensional heads and preserves the
-occupancy assertion. Before an update, remove only the managed patch, then
+It uses 4-column tiles for 72-dimensional projector heads and smaller tiles for
+256/512-dimensional heads, preserving the occupancy assertion. Before a source
+or patch update, remove only the installed managed patch, then
 reapply it when required. Stop if the patch no longer applies.
 
 ## Step Map
 
-Update this map with any change to recipe sections, operation IDs or role
-ownership. Keep recipes and tasks aligned in the same change. Validation-only
-tasks remain in Ansible.
+Each recipe's `ops-step` names its Ansible task. Grouped cells map to several
+tasks; `.hip` IDs distinguish cells using the same backend-neutral task.
+HIP section 3.3 reuses the verification cell in section 2.3.
+
+Both paths follow setup, build, service and verification. The role handles
+patching in `source.yml`; the manual shows it beside the HIP build. Manual
+service cells restart immediately; Ansible restarts only on changes.
+Validation and check-mode helpers remain Ansible-only.
+
+Update roles, recipe markers and this map together.
 
 | Notebook part | Role | Operations |
 |---|---|---|
@@ -69,16 +93,16 @@ tasks remain in Ansible.
 | rocm 2.2 HIP | rocm | `amd.rocm.install`, `amd.rocm.compiler.verify` |
 | rocm 2.3 Python | rocm | `amd.rocm.python.install`, `amd.rocm.python.inspect` |
 | rocm 2.4 Reboot | rocm | `amd.rocm.reboot.report` (manual reminder) |
-| llama 1.1 Configure the model | llama | `llama.settings.require` |
-| llama 1.2 Service user | llama | `llama.user.create`, `llama.state.prepare` |
-| llama 1.3 Hugging Face CLI | model_store | Install isolated `hf` environment and PATH link |
-| llama 1.4 Model and optional BF16 projector | model_store | `llama.model.prepare`, `llama.model.download`, optional checksums and permissions |
-| llama 1.5 Source | llama | `llama.source.prepare`, `llama.source.checkout` |
-| llama 2.1 Vulkan build | llama | `llama.vulkan.configure`, `llama.vulkan.build`, `llama.backends.verify` |
-| llama 3.1 HIP build | llama | `llama.hip.patch`, `llama.hip.configure`, `llama.hip.build`, `llama.backends.verify` |
-| llama 2.2 / 3.2 Service | llama | `llama.systemd.write`, `llama.systemd.start` |
-| llama 2.3 / 3.3 Inference | llama | `llama.health.verify`, `llama.models.verify`, `llama.inference.verify`, `llama.offload.verify` |
-| llama 4.1 Image example | Manual | Optional image request; visual review by the operator |
+| llama 1.1 Configure the model | [llama/main.yml](roles/llama/tasks/main.yml) | `llama.settings.require`; values from role defaults and inventory |
+| llama 1.2 Service user | [llama/main.yml](roles/llama/tasks/main.yml) | `llama.user.create`, `llama.state.prepare` |
+| llama 1.3 Hugging Face CLI | [model_store/main.yml](roles/model_store/tasks/main.yml) | `model_store.hf.install`, `model_store.hf.link` |
+| llama 1.4 Model and optional BF16 projector | [model_store/download.yml](roles/model_store/tasks/download.yml), [artifact.yml](roles/model_store/tasks/artifact.yml) | `llama.model.prepare`, `llama.model.download`, `model_store.artifact.permissions`, optional `model_store.artifact.verify` |
+| llama 1.5 Source | [llama/source.yml](roles/llama/tasks/source.yml) | `llama.source.prepare`, `llama.source.checkout`; managed patch removal before updates |
+| llama 2.1 Vulkan build | [llama/main.yml](roles/llama/tasks/main.yml) | `llama.vulkan.configure`, `llama.vulkan.build`, `llama.backends.verify` |
+| llama 3.1 HIP build | [llama/source.yml](roles/llama/tasks/source.yml), [main.yml](roles/llama/tasks/main.yml) | `llama.hip.patch`, `llama.compiler.locate`, `llama.hip.configure`, `llama.hip.build`, `llama.backends.verify` |
+| llama 2.2 / 3.2 Service | [llama/main.yml](roles/llama/tasks/main.yml), [service template](roles/llama/templates/llama.service.j2) | `llama.systemd.write`, `llama.systemd.reload`, `llama.systemd.start` |
+| llama 2.3 / 3.3 Shared verification | [llama/main.yml](roles/llama/tasks/main.yml) | `llama.health.verify`, `llama.models.verify`, `llama.inference.verify`, `llama.service.inspect`, `llama.offload.verify` (including FA and optional projector placement) |
+| llama 4.1 Image example | Manual only | Describe a supplied image and review the answer; the role checks projector loading, not image-answer quality |
 
 ## Validation and Check Mode
 

@@ -17,4 +17,21 @@ models:  # Models to download
     # revision: a29b2a6b584a5bdcb672ccdcda99ea9faeacc51a  # Optional version pin
     # sha256: 3712b9bd32cae83a22f67ee7a4466d8d7a4f21646ac8a07d19bf9418e8767a70  # Optional checksum
 
+  # - name: gemma-4-E4B-it-Q4_0  # Optional download; uncomment this entry to include it
+  #   repo: ggml-org/gemma-4-E4B-it-GGUF
+  #   file: gemma-4-E4B-it-Q4_0.gguf
+  #   # mmproj: mmproj-gemma-4-E4B-it-BF16.gguf  # Optional images; BF16 only
+
+  # - name: Qwen3.5-9B-Q4_K_M  # Optional download; settings in MODELS.md
+  #   repo: unsloth/Qwen3.5-9B-GGUF
+  #   file: Qwen3.5-9B-Q4_K_M.gguf
+  #   mmproj: mmproj-BF16.gguf  # BF16 images
+
 llama_model: gemma-4-12B-it-Q4_0  # Name of the model to serve
+llama_batch: 2048
+llama_ubatch: 1152
+llama_image_min_tokens: 70  # Gemma BF16 image profile
+llama_image_max_tokens: 1120
+# llama_model: gemma-4-E4B-it-Q4_0  # Optional selection; replace the value above after enabling its entry
+
+# Optional serving profiles (backend, cache and context): MODELS.md

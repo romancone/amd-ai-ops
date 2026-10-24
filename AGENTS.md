@@ -8,8 +8,9 @@
   "No tests" includes syntax checks and benchmark reruns; use static inspection.
 - Keep review changes unstaged when requested. Inspect the current working diff;
   do not mix it with previously committed or parked work.
-- Keep raw logs, JSON results, images and temporary evidence outside the repository.
-  Summarize requested evaluations in one short document and a comparison table.
+- Keep raw run logs and temporary evidence outside the repository. Approved
+  fixtures, scoring references and condensed reports may be tracked in `media/`,
+  `evaluation/` and `reports/`. Keep result tables in BENCHMARK.md.
   Preserve earlier results and distinguish completed, failed and pending runs.
 
 ## Git
@@ -43,7 +44,7 @@
 - Put separate commands on separate lines; do not chain them with `&&`.
 - Keep the command and short flags together: `curl -fL \`, not a bare `curl`
   followed by a separate line containing only `-fL`.
-- Wrap long commands or single argument swith `\` at logical boundaries.
+- Wrap long commands or long arguments with `\` at logical boundaries.
   Put each CMake definition or server option with its value on its own continuation line. Do not split every short argument mechanically or leave the entire command on one long line.
 - When a recipe requires a reboot, show `sudo reboot`; do not add a shell check
   just to decide whether to print or run it. Never reboot a host without authorization.
@@ -51,6 +52,8 @@
 ## Recipes
 
 - Keep Ansible roles reusable and host-agnostic.
+- Roles define installation and service behavior; inventory supplies model and
+  host values. Recipes, configuration examples and the Step Map derive from them.
 - Align manual recipes with their Ansible roles in settings, installation order,
   model paths, build flags, service arguments and final result. A prose-only edit
   should leave commands unchanged unless a correction requires changing them.
@@ -121,7 +124,37 @@
   do not silently substitute another quantization or expand the matrix.
 - Keep recommendations separate from measurements. State the recommended command
   and when to use it; never present an untested configuration as verified.
+- Retry HIP Flash Attention failures with FA off and retain both results.
+  Quantized V caches require FA; record rejected combinations as unsupported,
+  and use a clearly labelled f16/f16 fallback. Do not replace the original settings silently.
 
 ## Maintainer Context
 
 Read [MAINTAINERS.md](MAINTAINERS.md) before changing recipe structure.
+
+## Temporary Internal Evidence
+
+Temporary review notes, not operator instructions or a claim of current host state.
+
+- Matrix collected on 2026-10-22: 54 configurations, 108 pp/tg cases,
+  324 benchmark samples and 216 image answers at 16K, with FA on.
+- Matrix logs: `../amd-ai-ops-evidence-2026-10-22/vision-20261021T221846Z`.
+- Corrected Qwen HIP logs:
+  `../amd-ai-ops-evidence-2026-10-22/qwen-fa-fix-20261022/node2/h3`.
+- Service checks on 2026-10-23 passed for both backends at 16K: model identity,
+  text generation, BF16 projector placement, FA on and all 49 layers on GPU.
+  These were service checks, not new pp/tg or four-image measurements.
+- Service-check logs:
+  `../amd-ai-ops-evidence-2026-10-24/session-evidence/amd-context16k-20261023`.
+- External evidence index: `../amd-ai-ops-evidence-2026-10-24/README.md`.
+
+### Parked Next-Step Evaluation
+
+Pending; do not run until explicitly requested:
+
+1. Test MTP on versus off with supported model artifacts.
+2. Test 2 and 4 concurrent slots.
+3. Compare unified KV cache on/off and cache capacity at those concurrency levels.
+
+All 54 current configurations logged `kv_unified = false` in both image-server
+and pp/tg logs. These single-slot results do not establish concurrent capacity.

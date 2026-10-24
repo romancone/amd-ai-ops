@@ -18,6 +18,12 @@ ExecStart={{ llama_source_dir }}/build-{{ llama_backend }}/bin/llama-server \
     --alias {{ llama_model }} \
     --ctx-size {{ llama_context }} \
     --parallel {{ llama_parallel }} \
+    --batch-size {{ llama_batch }} \
+    --ubatch-size {{ llama_ubatch }} \
+{% if llama_image_min_tokens is not none %}
+    --image-min-tokens {{ llama_image_min_tokens }} \
+    --image-max-tokens {{ llama_image_max_tokens }} \
+{% endif %}
     --flash-attn {{ llama_flash_attention }} \
     --cache-type-k {{ llama_cache_type_k }} \
     --cache-type-v {{ llama_cache_type_v }} \

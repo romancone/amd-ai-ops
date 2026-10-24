@@ -8,8 +8,12 @@ llama_hip_arch: "{{ rocm_expected_gfx_target }}"
 llama_service_user: llama
 llama_state_dir: /var/lib/llama
 llama_port: 8080
-llama_context: 4096
+llama_context: 16384
 llama_flash_attention: "on"
 llama_cache_type_k: f16
 llama_cache_type_v: f16
 llama_parallel: 1
+llama_batch: 2048
+llama_ubatch: 1152
+llama_image_min_tokens: null  # Optional image budget; omit to use model defaults
+llama_image_max_tokens: null

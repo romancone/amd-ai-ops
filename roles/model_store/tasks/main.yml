@@ -6,7 +6,7 @@
       ansible.builtin.assert:
         that: model_store_hf_venv is match('^/opt/[A-Za-z0-9_.-]+$')
 
-    - name: Install hf in its own Python environment
+    - name: model_store.hf.install | Install hf in its own Python environment
       ansible.builtin.pip:
         name: huggingface_hub
         virtualenv: "{{ model_store_hf_venv }}"
@@ -14,7 +14,7 @@
       become: true
       when: not ansible_check_mode
 
-    - name: Make hf available on PATH
+    - name: model_store.hf.link | Make hf available on PATH
       ansible.builtin.file:
         src: "{{ model_store_hf_venv }}/bin/hf"
         dest: /usr/local/bin/hf
