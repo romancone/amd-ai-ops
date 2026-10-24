@@ -138,3 +138,14 @@ capacity or compatibility with every training workload.
 ## Project Rules
 
 See [AGENTS.md](AGENTS.md) and [MAINTAINERS.md](MAINTAINERS.md).
+
+## Changelog
+
+### 2026-10-24 — [79dc65d](https://github.com/romancone/amd-ai-ops/commit/79dc65d)
+
+- Add E4B and Qwen model profiles, 16K configuration and aligned Runme settings.
+- Fix RDNA2 HIP Flash Attention for Qwen image projectors.
+- Add repeatable evaluation, Luna-6 quality scoring and HTML comparisons.
+
+Latest test: **2026-10-23** — 16K HIP/Vulkan service checks passed;
+model measurements are in [BENCHMARK.md](BENCHMARK.md).
