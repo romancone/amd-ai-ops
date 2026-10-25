@@ -135,6 +135,14 @@ capacity or compatibility with every training workload.
 - [HTML summary](reports/index.html) and [interactive results](reports/report.html): comparisons and saved image answers.
 - [Evaluation workflow](evaluation/README.md): run benchmarks, score answers and generate reports.
 
+Published reports: [romancone.github.io/amd-ai-ops](https://romancone.github.io/amd-ai-ops/).
+In GitHub **Settings → Pages**, select **GitHub Actions** as the source.
+[Deploy reports](.github/workflows/deploy-reports.yml) publishes changes to
+`reports/` and `media/` from `main`; it also supports manual runs from Actions.
+Pull requests build the site artifact without publishing. Manual runs on other
+branches also build only; deployment requires `main` and a successful build.
+Images are included; recipe and scoring links open their documents on GitHub.
+
 ## Project Rules
 
 See [AGENTS.md](AGENTS.md) and [MAINTAINERS.md](MAINTAINERS.md).
