@@ -1,8 +1,9 @@
 # Model evaluation
 
-`reports/` contains the human-facing [recommendations](../reports/index.html)
-and [interactive results](../reports/report.html). `evaluation/` contains the
-image questions, frozen reference, scoring rules, template and report builder.
+Start at [reports/index.html](../reports/index.html). The three report tabs link
+to recommendations, model tests and MTP/users; they share `reports/style.css`.
+`evaluation/` contains the image questions, frozen reference, scoring rules,
+template and report builder.
 The GPU runner lives in [roles/llama_evaluation](../roles/llama_evaluation/).
 
 This evaluation adapts the image questions in
@@ -185,5 +186,5 @@ python3 evaluation/build_report.py --mtp-run /path/to/run
 ```
 
 This writes `reports/mtp.html` and sections 5–6 of `BENCHMARK.md`.
-The existing single-user results stay intact. When `reports/index.html` contains
-the marked recommendations block, the MTP report includes that same summary.
+The existing single-user results stay intact. Recommendations stay in
+`reports/index.html`; generated pages link there without copying the summary.

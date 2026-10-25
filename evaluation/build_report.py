@@ -133,24 +133,19 @@ def render_mtp(run, repo):
     def table(head, values):
         body = ''.join('<tr>'+''.join('<td>'+esc(fmt(v) if v is None or isinstance(v,float) else v)+'</td>' for v in row)+'</tr>' for row in values)
         return '<div class="table-wrap"><table><thead><tr>'+''.join('<th>'+esc(v)+'</th>' for v in head)+'</tr></thead><tbody>'+body+'</tbody></table></div>'
-    style = (repo/'reports/index.html').read_text().split('<style>', 1)[1].split('</style>', 1)[0]
     doc = '<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
-    doc += '<title>AMD MTP, users and cache capacity</title><style>'+style+'pre{white-space:pre-wrap}img{max-width:500px;width:100%}details{margin:16px 0}th,td{white-space:nowrap}</style><main>'
-    doc += '<nav><a href="index.html">Model recommendations</a><a href="report.html">Single-user tests</a><a href="../BENCHMARK.md">Benchmark tables</a></nav><h1>MTP, users and cache capacity</h1>'
+    doc += '<title>AMD AI Ops — MTP and users</title><link rel="stylesheet" href="style.css"><main class="mtp-report">'
+    doc += '<nav class="report-nav" aria-label="Reports"><a href="index.html">Recommendations</a><a href="report.html">Model tests</a><a href="mtp.html" aria-current="page">MTP and users</a></nav><h1>MTP, users and cache capacity</h1>'
     doc += f'<p>RX 6900 XT 16 GiB · llama.cpp <code>{esc(state["source_revision"][:9])}</code>.</p>'
     doc += f'<p>Matched results: {len(rows)}/90. Capacity checks: {len(caps)}/6 recorded, {cap_passed} validated, {len(caps)-cap_passed} unresolved.</p>'
-    overview = (repo/'reports/index.html').read_text()
-    if '<!-- recommendations:start -->' in overview and '<!-- recommendations:end -->' in overview:
-        recommendations = overview.split('<!-- recommendations:start -->', 1)[1].split('<!-- recommendations:end -->', 1)[0]
-        doc += recommendations
-    doc += '<h2>3. Detailed results</h2><h3>3.1 Matched tests at 16K per user</h3><details><summary>How to read the measurements</summary><p>The main matrix has 18 single-user MTP-off profiles and 72 two/four-user MTP-off/on profiles across f16/f16, Q8/Q8 and Q4/Q4 caches. Six additional single-user MTP-on profiles appear in section 3.2. Three batches per row; each request reads 512 and generates 128 tokens. Total t/s includes prompt and request time. Gen t/s/user uses server decode timing. Speed ratio is total t/s with MTP on divided by MTP off for the same profile; above 1 means faster, below 1 means slower. Each profile has four image answers once each, scored against Luna-6. See section 2.1 for allocated context and full-fill limits.</p>'
+    doc += '<h2>1. Detailed results</h2><h3>1.1 Matched tests at 16K per user</h3><details><summary>How to read the measurements</summary><p>The main matrix has 18 single-user MTP-off profiles and 72 two/four-user MTP-off/on profiles across f16/f16, Q8/Q8 and Q4/Q4 caches. Six additional single-user MTP-on profiles appear in section 1.2. Three batches per row; each request reads 512 and generates 128 tokens. Total t/s includes prompt and request time. Gen t/s/user uses server decode timing. Speed ratio is total t/s with MTP on divided by MTP off for the same profile; above 1 means faster, below 1 means slower. Each profile has four image answers once each, scored against Luna-6. See section 1.4 for full-context measurements and <a href="index.html#context-limits">Recommendations</a> for context limits.</p>'
     doc += '<p>Qwen uses the dedicated MTP-GGUF target in both modes. Gemma uses matching Q4 draft files only when MTP is on. Each image wave and timing batch starts a fresh server. Timing uses one fixed inventory/checklist task, not a broad workload sample.</p>'
     doc += '</details>'+table(headers, rows)
     if supplementary:
-        doc += '<h3>3.2 Single-user MTP-on results</h3><details><summary>Show six f16/f16 profiles</summary>'+table(headers, supplementary)+'</details>'
-    doc += '<h3>3.3 Ordinary llama-bench</h3><p>pp512/tg128, three repetitions, 16K allocation, microbatch 512. These measure one user with MTP off.</p>'
+        doc += '<h3>1.2 Single-user MTP-on results</h3><details><summary>Show six f16/f16 profiles</summary>'+table(headers, supplementary)+'</details>'
+    doc += '<h3>1.3 Ordinary llama-bench</h3><p>pp512/tg128, three repetitions, 16K allocation, microbatch 512. These measure one user with MTP off.</p>'
     doc += table(['Model / backend', 'FA', 'Cache', 'pp512 ± SD', 'tg128 ± SD'], baselines)
-    doc += '<h3>3.4 Full-context measurements</h3><p>Detailed measurements for the six one-user, MTP-off, f16/f16 checks in section 2.1. Context values are exact tokens. Memory refers to the largest passing context, or the failed native attempt when no pass exists. Practical GPU free is the smallest sampled headroom during full-fill and image checks. Capacity does not establish long-context image quality. RAM is process RSS; GPU-accessible host memory is recorded separately in raw evidence.</p>'
+    doc += '<h3>1.4 Full-context measurements</h3><p>Six one-user, MTP-off, f16/f16 checks. Context values are exact tokens. Memory refers to the largest passing context, or the failed native attempt when no pass exists. Practical GPU free is the smallest sampled headroom during full-fill and image checks. Capacity does not establish long-context image quality. RAM is process RSS; GPU-accessible host memory is recorded separately in raw evidence.</p>'
     boundary_path = run/'strict-boundary-checks.json'
     boundary_notice = ''
     if boundary_path.exists():
@@ -161,9 +156,10 @@ def render_mtp(run, repo):
             doc += '<p>'+esc(boundary_notice)+'</p>'
     doc += ''.join('<p>'+esc(note)+'</p>' for note in capacity_failures)
     doc += table(cap_headers, caps)
-    doc += '<h3>3.5 Image answers</h3><p>Identical image/prompt/answer combinations share one view and judgement.</p>'+''.join(
+    doc += '<h3>1.5 Image answers</h3><p>Identical image/prompt/answer combinations share one view and judgement.</p>'+''.join(
         '<details>'+value['body']+'<p>Configurations: '+esc(', '.join(value['configurations']))+'</p></details>'
-        for value in answers.values())+'</main></html>'
+        for value in answers.values())
+    doc += '<footer class="doc-links"><a href="../README.md">Repository guide</a><a href="../MODELS.md">Model settings</a><a href="../llama.md">Installation / Runme</a><a href="../BENCHMARK.md">Benchmark tables</a><a href="../evaluation/README.md">How tests are scored</a></footer></main></html>'
     (repo/'reports/mtp.html').write_text(doc)
     def markdown(head, values):
         return '\n'.join(['| '+' | '.join(head)+' |', '| '+' | '.join(['---']*len(head))+' |']+
