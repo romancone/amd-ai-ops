@@ -11,6 +11,7 @@ import re
 import signal
 import subprocess as sp
 import time
+import threading
 import urllib.error
 import urllib.request
 
@@ -56,13 +57,70 @@ def score(text, image):
     return {'coverage_score':sum(c['weight'] for c in checks if c['matched']),
             'criteria': checks, 'method':'automated key-fact coverage; not a hallucination score'}
 
-def placement(log):
+def placement(log, context):
     layers = re.findall(r'offloaded (\d+)/(\d+) layers', log)
     ctx = re.findall(r'\bn_ctx\s*=\s*(\d+)', log)
     return {'layers': layers, 'context': ctx,
             'full_offload': bool(layers) and all(a == b for a,b in layers),
-            'context_16k': bool(ctx) and all(int(n)==16384 for n in ctx),
+            'context_matches': bool(ctx) and all(int(n)==context for n in ctx),
             'flash_attention': re.findall(r'flash_attn\s*=\s*([^\n]+)', log)}
+
+class MemoryMonitor:
+    """Sample device occupancy and process resident RAM, once a second."""
+    def __init__(self, proc, dest):
+        self.proc, self.dest = proc, dest
+        self.done = threading.Event()
+        self.peak = {}
+        self.thread = threading.Thread(target=self.sample, daemon=True)
+        self.thread.start()
+
+    def sample(self):
+        devices = list(Path('/sys/class/drm').glob('card[0-9]*/device/mem_info_vram_total'))
+        with open(self.dest/'memory.jsonl', 'w') as out:
+            while not self.done.is_set():
+                values = {'utc': now()}
+                for path in devices:
+                    for kind in ['vram', 'gtt']:
+                        value = int((path.parent/f'mem_info_{kind}_used').read_text()) / 2**20
+                        values[kind+'_mib'] = values.get(kind+'_mib', 0) + value
+                try:
+                    status = Path(f'/proc/{self.proc.pid}/status').read_text()
+                    values['rss_mib'] = int(re.search(r'VmRSS:\s+(\d+)', status)[1]) / 1024
+                except (OSError, TypeError):
+                    pass
+                for key, value in values.items():
+                    if key != 'utc':
+                        self.peak[key] = max(self.peak.get(key, 0), value)
+                out.write(json.dumps(values)+'\n')
+                out.flush()
+                self.done.wait(1)
+
+    def finish(self):
+        self.done.set()
+        self.thread.join()
+        return self.peak
+
+def full_context(context, dest):
+    # Raw token IDs make the input length exact, independent of chat templates.
+    seed = request('/tokenize', {'content': 'A landscape contains hills, trees and a river. ', 'add_special': False})['tokens']
+    count = context - 128
+    tokens = (seed * (count // len(seed) + 1))[:count]
+    started = time.monotonic()
+    response = request('/completion', {'prompt': tokens, 'n_predict': 128,
+                       'temperature': 0, 'seed': 42, 'ignore_eos': True,
+                       'cache_prompt': False}, timeout=M.get('full_context_timeout', 1800))
+    save(dest/'full-context.json', response)
+    result = {'input_tokens': count, 'seconds': time.monotonic()-started,
+              'evaluated_tokens': response.get('tokens_evaluated'),
+              'generated_tokens': response.get('tokens_predicted'),
+              'context_limit_reached': response.get('truncated'), 'timings': response.get('timings', {})}
+    # The server sets truncated=true at an exact context boundary, even when
+    # every requested input/output token was processed with context shift off.
+    result['passed'] = (result['evaluated_tokens'] == count
+                        and result['generated_tokens'] == 128
+                        and result['timings'].get('prompt_n') == count
+                        and result['timings'].get('cache_n') == 0)
+    return result
 
 def stop(proc):
     if proc and proc.poll() is None:
@@ -101,7 +159,9 @@ state={'start_utc': previous.get('start_utc') or M.get('start_utc') or now(),
        'completed':[], 'total':len(cases),
        'source_revision':sp.check_output(['git','-C',M['source'],'rev-parse','HEAD'],text=True).strip()}
 save(status_path,state)
-was_active=sp.run(['systemctl','is-active','--quiet',M['service']]).returncode==0
+was_active=previous.get('service_was_active', sp.run(['systemctl','is-active','--quiet',M['service']]).returncode==0)
+state['service_was_active']=was_active
+save(status_path,state)
 server=None
 try:
     for model in M['models']:
@@ -110,6 +170,7 @@ try:
                 raise FileNotFoundError(model[field])
     sp.run(['sudo','systemctl','stop',M['service']],check=True)
     for model,backend,cache,fa,fallback_of in cases:
+        context = int(model.get('context', M.get('context', 16384)))
         key=f"{model['id']}-{backend}-{cache}"+('-fa-off' if fa=='off' else '')
         dest=ROOT/key
         dest.mkdir(exist_ok=True)
@@ -120,16 +181,25 @@ try:
                 state['total']=len(cases)
             state['completed'].append(key)
             continue
+        state['phase']='benchmark'
         state['current']=key
         save(status_path,state)
         result={'id':key,'model':model,'backend':backend,'cache':cache,
-                'fa':fa,'fallback_of':fallback_of,'context':16384,'benchmark_repetitions':3,'image_repetitions':1,'start_utc':now(),
+                'fa':fa,'fallback_of':fallback_of,'context':context,'benchmark_repetitions':3,'image_repetitions':1,'start_utc':now(),
                 'images':[], 'errors':[]}
         binary=f"{M['source']}/build-{backend}/bin"
-        # fit minimum fixes allocation at 16K without filling the cache.
+        estimate = model.get('estimated_vram_mib', {}).get(backend, {}).get(cache)
+        result['estimated_vram_mib'] = estimate
+        if estimate and estimate > M.get('vram_limit_mib', 16384):
+            result.update(status='excluded', errors=['Estimated VRAM exceeds 16 GiB'])
+            save(result_path, result)
+            state['completed'].append(key)
+            save(status_path, state)
+            continue
+        # Allocate the requested context without filling it in pp512/tg128.
         bench=[f'{binary}/llama-bench','-m',model['file'],'-p','512','-n','128',
                '-r','3','-t','10','-b','2048','-ub','512','-ngl','99',
-               '-fa',fa,'-ctk',cache,'-ctv',cache,'-fitc','16384','-fitt','0',
+               '-fa',fa,'-ctk',cache,'-ctv',cache,'-fitc',str(context),'-fitt','0',
                '-o','json','-v']
         partial = json.loads((dest/'partial.json').read_text()) if (dest/'partial.json').exists() else {}
         if partial.get('benchmark', {}).get('returncode') == 0:
@@ -139,15 +209,17 @@ try:
         if result['benchmark']['returncode'] != 0:
             result['errors'].append(f"benchmark exited {result['benchmark']['returncode']}")
         bench_log=(dest/'bench.json.stderr').read_text(errors='replace')
-        result['benchmark']['placement']=placement(bench_log)
+        result['benchmark']['placement']=placement(bench_log, context)
         try:
             result['benchmark']['results']=json.loads((dest/'bench.json').read_text())
         except (ValueError,OSError):
             result['errors'].append('benchmark failed or produced no JSON')
         save(dest/'partial.json',result)
+        state['phase']='images'
+        save(status_path,state)
         # One model load serves each of the four images once.
         args=[f'{binary}/llama-server','--model',model['file'],'--mmproj',model['mmproj'],
-              '--alias',model['id'],'--ctx-size','16384','--parallel','1',
+              '--alias',model['id'],'--ctx-size',str(context),'--parallel','1',
               '--flash-attn',fa,'--cache-type-k',cache,'--cache-type-v',cache,
               '--n-gpu-layers','all','--fit','off','--threads','10',
               '--batch-size',str(max(2048,model['ubatch'])),
@@ -156,10 +228,14 @@ try:
               '--image-max-tokens',str(model['image_max']),
               '--host','127.0.0.1','--port',str(M['port']),
               '--jinja','--reasoning-budget','0','--log-verbosity','4']
+        if M.get('full_context'):
+            args += ['--no-context-shift', '--no-kv-unified']
         result['server_command']=args
+        monitor = None
         try:
             with open(dest/'server.log','w') as log:
                 server=sp.Popen(args,stdout=log,stderr=sp.STDOUT)
+                monitor = MemoryMonitor(server, dest)
                 deadline=time.monotonic()+300
                 while True:
                     if server.poll() is not None:
@@ -204,20 +280,29 @@ try:
                             sample['seconds']=time.monotonic()-started
                         result['images'].append(sample)
                         save(dest/'partial.json',result)
+                if M.get('full_context'):
+                    state['phase'] = 'full_context'
+                    save(status_path, state)
+                    result['full_context'] = full_context(context, dest)
+                    if not result['full_context']['passed']:
+                        result['errors'].append('Full-context token counts do not match the request')
+                    save(dest/'partial.json', result)
         except Exception as exc:
             result['errors'].append(str(exc))
         finally:
             result['server_exit_before_cleanup']=server.poll() if server else None
+            if monitor:
+                result['peak_memory_mib'] = monitor.finish()
             stop(server)
             server=None
         log=(dest/'server.log').read_text(errors='replace')
-        result['server_placement']=placement(log)
+        result['server_placement']=placement(log, context)
         result['projector_backend']=re.findall(r'CLIP using ([^\n]+) backend',log)
         result['actual_image_tokens']=re.findall(r'image.*?(\d+) tokens',log)
         for kind, details in [('benchmark', result['benchmark']['placement']),
                               ('server', result['server_placement'])]:
-            if not details['full_offload'] or not details['context_16k']:
-                result['errors'].append(f'{kind}: full GPU offload or 16K context not confirmed')
+            if not details['full_offload'] or not details['context_matches']:
+                result['errors'].append(f'{kind}: full GPU offload or requested context not confirmed')
             if not details['flash_attention'] or any(('enabled' if fa=='on' else 'disabled') not in flag for flag in details['flash_attention']):
                 result['errors'].append(f'{kind}: Flash Attention not confirmed')
         expected_backend = 'ROCm' if backend == 'hip' else 'Vulkan'

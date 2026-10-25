@@ -3,6 +3,11 @@
   ansible.builtin.assert:
     that:
       - llama_evaluation_models | length > 0
+      - llama_evaluation_context | int >= 1024
+      - llama_evaluation_caches | length > 0
+      - llama_evaluation_caches | difference(['f16', 'q8_0', 'q4_0']) | length == 0
+      - llama_evaluation_full_context_timeout | int > 0
+      - llama_evaluation_vram_limit_mib | int > 0
       - llama_evaluation_dir is match('^/[A-Za-z0-9_./-]+$')
       - llama_evaluation_port | int > 1024
       - llama_evaluation_service is match('^[A-Za-z0-9_.-]+$')

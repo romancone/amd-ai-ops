@@ -27,8 +27,13 @@ combinations rejected without FA are recorded as unsupported.
 
 Image requests use seed 42, temperature 0.2 and at most 512 output tokens,
 without prompt cache reuse. Length-limited output is flagged. Text benchmarks
-use `--fit-ctx 16384 --fit-target 0`; logs must confirm 16K allocation and full
-offload. This does not prefill 16K tokens.
+use `--fit-ctx` with the requested context and `--fit-target 0`; logs must
+confirm that allocation and full offload. pp512 does not fill the context.
+Set `llama_evaluation_full_context: true` to add an exact token-count capacity
+check: fill context minus 128 tokens, then generate 128 without discarding input or
+shifting context. The input repeats a short landscape sentence. This measures capacity, not
+long-context answer quality or realistic document-processing speed.
+VRAM, GTT and process RSS are sampled every second during server checks.
 
 ### 1.2 Run
 
@@ -37,6 +42,9 @@ an ignored inventory override such as `host_vars/gpu-host.yml`:
 
 ```yaml
 llama_evaluation_dir: /var/tmp/llama-evaluation  # New directory for a new matrix
+llama_evaluation_context: 16384  # Override with context on an individual model entry
+llama_evaluation_caches: [f16, q8_0, q4_0]
+llama_evaluation_full_context: false  # Optional filled-context check
 # llama_evaluation_retry_from: /var/tmp/previous-run  # Retry only saved HIP FA failures
 llama_evaluation_models:
   - id: gemma12-Q4_0
@@ -51,6 +59,11 @@ llama_evaluation_models:
 
 Add entries for installed models. Use a new directory when model files, builds
 or settings change; reuse a directory only to resume the same evaluation.
+Each model can override `context`. Optional `estimated_vram_mib` maps backend
+and cache to a memory estimate; values above `llama_evaluation_vram_limit_mib`
+are excluded before loading. Filled-context requests time out after 30 minutes
+unless `llama_evaluation_full_context_timeout` is changed.
+
 For saved failures, set `llama_evaluation_retry_from` to the old run directory
 and `llama_evaluation_dir` to a new one. Only failed HIP FA cases are retried;
 successful image checks are not repeated. The original results stay intact.
@@ -115,8 +128,9 @@ The builder combines saved results and judgements with `reference.json` and
 `report.template.html`, then writes `reports/report.html`. It checks that each
 judgement matches the saved answer. Missing judgements stay unscored.
 Use `--patched-run /path/to/corrected-run` to include corrected results; later
-inputs replace earlier rows for the same model/backend/cache. The report includes
-only FA-on, 16K cases. FA-off fallback results remain in the run directory.
+inputs replace earlier rows only for the same model/backend/cache/context/FA.
+Use `--additional-run /path/to/native-context-run` to include a new context
+matrix. Memory classes distinguish ≤8 GiB, ≤16 GiB and excluded configurations.
 
 This step runs no GPU inference and makes no Luna-6 calls.
 `reports/index.html` is the handwritten recommendation summary; update it

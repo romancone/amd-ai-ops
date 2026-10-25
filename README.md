@@ -141,11 +141,17 @@ See [AGENTS.md](AGENTS.md) and [MAINTAINERS.md](MAINTAINERS.md).
 
 ## Changelog
 
+### 2026-10-25 — Q8 model evaluation
+
+- Add optional full-context checks and GPU memory limits to evaluation.
+- Publish 72 configurations, Q4/Q8 image-quality comparisons and 8/16 GiB recommendations.
+- Simplify HTML reports and share duplicate answers without removing results.
+
 ### 2026-10-24 — [79dc65d](https://github.com/romancone/amd-ai-ops/commit/79dc65d)
 
 - Add E4B and Qwen model profiles, 16K configuration and aligned Runme settings.
 - Fix RDNA2 HIP Flash Attention for Qwen image projectors.
 - Add repeatable evaluation, Luna-6 quality scoring and HTML comparisons.
 
-Latest test: **2026-10-23** — 16K HIP/Vulkan service checks passed;
+Service checks on **2026-10-23** — 16K HIP/Vulkan passed;
 model measurements are in [BENCHMARK.md](BENCHMARK.md).

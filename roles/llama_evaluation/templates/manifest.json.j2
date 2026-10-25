@@ -3,11 +3,14 @@
   'source': llama_evaluation_source,
   'service': llama_evaluation_service,
   'port': llama_evaluation_port | int,
-  'context': 16384,
+  'context': llama_evaluation_context | int,
+  'full_context': llama_evaluation_full_context | bool,
+  'full_context_timeout': llama_evaluation_full_context_timeout | int,
+  'vram_limit_mib': llama_evaluation_vram_limit_mib | int,
   'benchmark_repetitions': 3,
   'image_repetitions': 1,
   'start_utc': llama_evaluation_start_utc,
   'retry_from': llama_evaluation_retry_from,
   'backends': ['hip', 'vulkan'],
-  'caches': ['f16', 'q8_0', 'q4_0']
+  'caches': llama_evaluation_caches
 } | to_nice_json }}

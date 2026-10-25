@@ -25,29 +25,44 @@ article { background: white; padding: 8px 20px; border-radius: 8px; border: 1px 
 </style>
 </head>
 <body><main>
-<nav aria-label="Repository documents"><a href="../README.md">README</a><a href="../MODELS.md">Model configuration</a><a href="../llama.md">Installation / Runme</a><a href="../BENCHMARK.md">Benchmark evidence</a><a href="report.html">Full interactive matrix</a></nav>
-<h1>Three practical model choices</h1>
-<p>RX 6900 XT results from 21–22 October 2026. Every recommendation uses Flash Attention,
-one request slot, thinking off and MTP off. Image support uses BF16 projectors only.</p>
-<div class="table-wrap">
-<table>
-<caption>Combined recommendation — rates and memory from saved 16K runs</caption>
-<thead><tr><th scope="col">Model / weights</th><th scope="col">Backend</th><th scope="col">K/V cache</th><th scope="col">FA</th><th scope="col">Recommended context</th><th scope="col">pp512 / tg128 (t/s)</th><th scope="col">Image quality¹</th><th scope="col">VRAM budget / recorded²</th></tr></thead>
-<tbody>
-<tr><th scope="row">Gemma 4 12B IT Q4_0</th><td>HIP<br><small>Vulkan alternative</small></td><td>f16/f16</td><td>on</td><td class="num">16,384</td><td class="num">1442.66 / 51.71<br><small>Vulkan: 1374.62 / 54.91</small></td><td>98.50%<br><small>Vulkan: 97.25%</small></td><td class="num">10 / 8.65 GiB<br><small>Vulkan: 10 / 8.38 GiB</small></td></tr>
-<tr><th scope="row">Gemma 4 E4B IT Q4_0</th><td>HIP<br><small>Vulkan alternative</small></td><td>f16/f16</td><td>on</td><td class="num">16,384</td><td class="num">3436.03 / 93.10<br><small>Vulkan: 3325.99 / 108.29</small></td><td>84.25%<br><small>Vulkan: 83.00%</small></td><td class="num">6 / 4.99 GiB<br><small>Vulkan: 6 / 4.64 GiB</small></td></tr>
-<tr><th scope="row">Qwen3.5-9B Q4_K_M<br><small>Image quality</small></th><td>Vulkan<br><small>HIP comparison</small></td><td>f16/f16</td><td>on</td><td class="num">16,384</td><td class="num">1537.75 / 75.00<br><small>HIP: 1546.50 / 68.18</small></td><td>98.75%<br><small>HIP: 92.75%</small></td><td class="num">8 / 7.00 GiB<br><small>HIP: 8 / 7.33 GiB</small></td></tr>
-<tr><th scope="row">Qwen3.5-9B Q4_K_M<br><small>Save memory</small></th><td>Vulkan<br><small>HIP alternative</small></td><td>q4_0/q4_0</td><td>on</td><td class="num">16,384</td><td class="num">1529.78 / 73.80<br><small>HIP: 1506.96 / 66.13</small></td><td>97.75%<br><small>HIP: 97.75%</small></td><td class="num">8 / 6.63 GiB<br><small>HIP: 8 / 6.98 GiB</small></td></tr>
-</tbody></table>
-</div>
-<p>For Gemma 12B, HIP saves 18 ms prefilling 512 tokens; Vulkan saves 145 ms generating 128 tokens. Estimated combined text time is 2.831 / 2.703 s (HIP/Vulkan). E4B: 1.524 / 1.336 s; Qwen/Q4: 2.275 / 2.069 s. These estimates come from pp512/tg128 rates, not image latency.</p>
+<nav aria-label="Repository documents"><a href="../README.md">README</a><a href="../MODELS.md">Model settings</a><a href="../llama.md">Installation / Runme</a><a href="../BENCHMARK.md">Benchmark tables</a><a href="report.html">All test results</a></nav>
+<h1>Image quality, cache and memory</h1>
+<p>RX 6900 XT 16 GiB · one user · Flash Attention (FA) on · BF16 image projectors · thinking and MTP off.
+Tests cover HIP and Vulkan with f16, Q8 and Q4 caches.</p>
+<p><strong>54 configurations at 16K; 18 at maximum context: 10 passed, 4 failed, 4 excluded.</strong>
+Context is how much text the model can hold. All 52 successful image answers at maximum context matched the 16K answers.</p>
+<article aria-labelledby="quant-quality"><h2 id="quant-quality">Q8 vs Q4: image quality</h2>
+<p>Q8 offers no consistent image-quality advantage in these tests. For Qwen, use <strong>Q4_K_M with Vulkan, f16/f16 cache and Flash Attention on.</strong></p></article>
 <div class="notes">
-<article><h2>Gemma 12B — text and images</h2><p>Use HIP, f16/f16 and FA on. HIP retained a landmark Vulkan omitted; that explains the 1.25-point quality difference. Average image response time was 3.16 s on both, with different answer lengths. Choose Vulkan for faster text generation.</p></article>
-<article><h2>E4B — faster text, weaker images</h2><p>Use HIP, f16/f16 and FA on; Vulkan is the faster generation alternative. Both missed the Titanic identification. Prefer Gemma 12B or Qwen when image quality matters.</p></article>
-<article><h2>Qwen — image quality or lower memory</h2><p>Use Vulkan, f16/f16 and FA on for image quality. Q4/Q4 saves about 0.36 GiB in the recorded snapshots, with a slightly lower score and generation rate. HIP/Q4 matched Vulkan/Q4 quality but was slower. Qwen/f16's 0.25-point lead over Gemma/HIP is too small to establish a quality winner on four images.</p></article>
+<article><h2>8 GiB budget</h2><p>Use <strong>Qwen Q4_K_M / Vulkan / f16</strong> for images at 16K. Q4 cache saves memory: 6.63 GiB with a 97.75% image score. These choices still need testing on an 8 GiB card.</p></article>
+<article><h2>16 GiB budget</h2><p>Use <strong>Gemma 12B Q4 / HIP / f16</strong> for text and images at 16K. Q8 uses more memory and generates answers more slowly.</p></article>
+<article><h2>Above 16 GiB</h2><p><strong>Not run.</strong> Qwen Q8 and Gemma 12B Q8 with f16 cache at 256K are estimated to exceed 16 GiB on both backends.</p></article>
 </div>
-<p class="small">¹ Description quality relative to <a href="https://developers.openai.com/api/docs/models/gpt-6-luna">Luna-6</a> (<code>gpt-6-luna</code>) on four images, not general accuracy. See <a href="../BENCHMARK.md#shared-test-configuration">shared test settings</a>.</p>
-<p class="small"><strong>Compare in Codex:</strong> select Luna-6 (<code>gpt-6-luna</code>); ask it to score anonymized saved answers against the same images, frozen reference and <a href="../evaluation/README.md#image-description-quality">rubric</a>. No GPU rerun needed.</p>
-<p class="small">² Budgets are planning estimates, not tested minimums. Recorded VRAM is total occupied device memory at the end of the 16K image run, including other GPU allocations, not peak process usage. Logged host buffers were 1.10 GiB (Gemma), 2.27 GiB (E4B), and 0.72 GiB (Qwen); total host RAM and peak VRAM requirements were not recorded.</p>
-<p class="small">Summary of <a href="../BENCHMARK.md">benchmark conclusions</a>. Model descriptions and configuration examples are in <a href="../MODELS.md">MODELS.md</a>.</p>
+<p><strong>Reading the tables:</strong> pp512 is prompt-reading speed; tg128 is answer-generation speed, in tokens (pieces of text) per second. Higher is faster. VRAM is GPU memory. Quality scores compare descriptions of four images with Luna-6, not overall model accuracy.</p>
+<div class="table-wrap"><table><caption>16K image profiles — HIP / Vulkan, FA on</caption><thead><tr><th>Model / weights</th><th>K/V cache</th><th>Image quality %</th><th>pp512 (t/s)</th><th>tg128 (t/s)</th><th>VRAM snapshot GiB</th></tr></thead><tbody>
+<tr><th>Gemma 4 E4B Q4_0</th><td>f16/f16</td><td class="num">84.25 / 83.00</td><td class="num">3436.03 / 3325.99</td><td class="num">93.10 / 108.29</td><td class="num">4.99 / 4.64</td></tr>
+<tr><th>Gemma 4 E4B Q8_0</th><td>q4_0/q4_0</td><td class="num">82.50 / 82.25</td><td class="num">3293.96 / 2530.29</td><td class="num">61.10 / 73.29</td><td class="num">6.62 / 6.31</td></tr>
+<tr><th>Gemma 4 12B Q4_0</th><td>f16/f16</td><td class="num">98.50 / 97.25</td><td class="num">1442.66 / 1374.62</td><td class="num">51.71 / 54.91</td><td class="num">8.65 / 8.38</td></tr>
+<tr><th>Gemma 4 12B Q8_0</th><td>q4_0/q4_0</td><td class="num">97.25 / 99.25</td><td class="num">1337.11 / 1074.20</td><td class="num">30.64 / 33.66</td><td class="num">13.05 / 12.76</td></tr>
+<tr><th>Qwen3.5-9B Q4_K_M</th><td>f16/f16</td><td class="num">92.75 / 98.75</td><td class="num">1546.50 / 1537.75</td><td class="num">68.18 / 75.00</td><td class="num">7.33 / 7.00</td></tr>
+<tr><th>Qwen3.5-9B Q8_0</th><td>q4_0/q4_0</td><td class="num">96.50 / 96.25</td><td class="num">2020.57 / 1584.19</td><td class="num">45.51 / 49.92</td><td class="num">10.08 / 9.74</td></tr>
+</tbody></table></div>
+<div class="table-wrap"><table><caption>Q8 models with Q4/Q4 cache — maximum context, FA on</caption><thead><tr><th>Model</th><th>Backend</th><th>Context</th><th>Capacity</th><th>Peak VRAM GiB</th><th>Image quality %</th><th>Prompt reading (s)</th><th>Generation at limit (t/s)</th></tr></thead><tbody>
+<tr><th>Gemma 4 E4B</th><td>hip</td><td>131,072</td><td>passed</td><td>7.85</td><td>82.50</td><td>121.51</td><td>26.57</td></tr>
+<tr><th>Gemma 4 E4B</th><td>vulkan</td><td>131,072</td><td>passed</td><td>7.08</td><td>82.25</td><td>173.29</td><td>47.50</td></tr>
+<tr><th>Qwen3.5-9B</th><td>hip</td><td>262,144</td><td>passed</td><td>14.08</td><td>96.50</td><td>1220.29</td><td>12.14</td></tr>
+<tr><th>Qwen3.5-9B</th><td>vulkan</td><td>262,144</td><td>passed</td><td>12.80</td><td>96.25</td><td>786.97</td><td>28.28</td></tr>
+<tr><th>Gemma 4 12B</th><td>hip</td><td>262,144</td><td>passed</td><td>15.08</td><td>97.25</td><td>923.41</td><td>15.03</td></tr>
+<tr><th>Gemma 4 12B</th><td>vulkan</td><td>262,144</td><td>not passed</td><td>14.39</td><td>99.25</td><td>—</td><td>—</td></tr>
+</tbody></table></div>
+<p>A capacity pass means the model read a full prompt of repeated text and generated 128 tokens without dropping input. This checks memory and execution, not understanding of long conversations. Images were checked before filling the context.</p>
+<ul>
+<li><strong>E4B Q8 at 128K:</strong> Vulkan/Q4 uses less memory and generates faster; HIP/Q4 reads the prompt faster. Both still make image-description mistakes.</li>
+<li><strong>Qwen Q8 at 256K:</strong> use Vulkan/Q4 for faster prompt reading and answers.</li>
+<li><strong>Gemma 12B Q8 at 256K:</strong> use HIP/Q4. Vulkan/Q4 answered image questions but failed near 229K tokens.</li>
+</ul>
+<p><strong>Other failures:</strong> Gemma 12B/HIP with Q8 cache ran out of memory on images. Vulkan with Q8 cache failed near 155K tokens for Qwen and 115K for Gemma 12B. Qwen/HIP with Q8 cache passed with only about 12 MiB free; use Q4 cache for more space.</p>
+<p class="small"><strong>Compare in Codex:</strong> select Luna-6 (<code>gpt-6-luna</code>). Hide model names and score saved answers using the same images, reference answers and <a href="../evaluation/README.md#image-description-quality">scoring guide</a>. Identical answers use the same score.</p>
+<p class="small">16K memory was recorded at the end of each run. Maximum-context tests show the highest reading taken once per second. Both include other GPU use. Model download size differs from memory use.</p>
+<p class="small">Maximum-context tests also used system RAM: E4B 7.69–7.84 GiB, Qwen 9.05–9.17 GiB, Gemma 12B 12.01–12.16 GiB. Allow extra for the operating system and other apps. Detailed RAM readings are in the <a href="report.html">full report</a>.</p>
 </main></body></html>

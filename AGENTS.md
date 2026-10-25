@@ -147,6 +147,12 @@ Temporary review notes, not operator instructions or a claim of current host sta
 - Service-check logs:
   `../amd-ai-ops-evidence-2026-10-24/session-evidence/amd-context16k-20261023`.
 - External evidence index: `../amd-ai-ops-evidence-2026-10-24/README.md`.
+- Q8 maximum-context results: 10 passes, 4 failures, 4 memory exclusions;
+  14 pp/tg pairs (84 samples), 52 successful image answers and 4 image errors.
+  Successful answers match the 16K answers and use the same Luna-6 scores.
+- Maximum-context logs, corrected token counts and restored service state:
+  `../amd-ai-ops-evidence-2026-10-24/q8-full-context/`.
+  Token-count corrections are recorded as `validation_correction`.
 
 ### Parked Next-Step Evaluation
 
@@ -156,5 +162,5 @@ Pending; do not run until explicitly requested:
 2. Test 2 and 4 concurrent slots.
 3. Compare unified KV cache on/off and cache capacity at those concurrency levels.
 
-All 54 current configurations logged `kv_unified = false` in both image-server
-and pp/tg logs. These single-slot results do not establish concurrent capacity.
+All 54 16K configurations and the maximum-context checks used one slot with
+`kv_unified = false`. They do not establish capacity for multiple users.

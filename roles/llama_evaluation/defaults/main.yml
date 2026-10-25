@@ -6,3 +6,8 @@ llama_evaluation_service: llama.service
 llama_evaluation_port: 8081
 llama_evaluation_start_utc: ""
 llama_evaluation_retry_from: ""  # Previous run directory; retry only HIP FA occupancy failures
+llama_evaluation_context: 16384  # A model entry can override context
+llama_evaluation_caches: [f16, q8_0, q4_0]
+llama_evaluation_full_context: false  # Fill context minus 128 tokens, then generate 128
+llama_evaluation_full_context_timeout: 1800
+llama_evaluation_vram_limit_mib: 16384  # Skip entries whose estimated_vram_mib exceeds this
