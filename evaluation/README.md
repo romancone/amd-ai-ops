@@ -15,7 +15,7 @@ is ours; its example answers are not treated as ground truth.
 With both backend builds, model files and BF16 projectors already installed,
 `evaluation.yml` repeats the configured GPU matrix and calculates keyword
 coverage. It records timing, answers, errors, GPU placement, context and FA status.
-MTP, 2/4-slot and unified-KV comparisons are not implemented in this runner.
+Use the MTP mode below for simultaneous users and unified KV.
 
 ### 1.1 Matrix
 
@@ -45,6 +45,8 @@ llama_evaluation_dir: /var/tmp/llama-evaluation  # New directory for a new matri
 llama_evaluation_context: 16384  # Override with context on an individual model entry
 llama_evaluation_caches: [f16, q8_0, q4_0]
 llama_evaluation_full_context: false  # Optional filled-context check
+# llama_evaluation_full_context_timeout: 3600  # Allow long 256K fills in MTP mode
+# llama_evaluation_mode: mtp-slots-cache  # 16K per user; MTP off/on; 1/2/4 slots
 # llama_evaluation_retry_from: /var/tmp/previous-run  # Retry only saved HIP FA failures
 llama_evaluation_models:
   - id: gemma12-Q4_0
@@ -55,6 +57,8 @@ llama_evaluation_models:
     image_min: 70
     image_max: 1120
     ubatch: 1152
+    # max_context: 262144  # Required in MTP mode
+    # draft: /opt/models/gemma-4-12B-it-Q4_0/mtp-gemma-4-12B-it-Q4_0.gguf
 ```
 
 Add entries for installed models. Use a new directory when model files, builds
@@ -76,8 +80,45 @@ ansible-playbook evaluation.yml --diff --limit gpu-host
 
 Raw benchmark JSON, server logs and image responses stay in the run directory.
 
+### 1.3 MTP, users and cache capacity
+
+Set `llama_evaluation_mode: mtp-slots-cache` for the approved 1/2/4-user matrix.
+It fixes 16K **per user**, FA on and unified KV on. It compares f16/f16,
+Q8/Q8 and Q4/Q4 caches: 18 single-user configurations with MTP off, then
+72 configurations for 2/4 users with MTP off/on. Each model
+needs `max_context`; add `draft` for a separate MTP file. An integrated MTP model
+uses the same target file with MTP off and on. Keep projectors BF16.
+
+The runner checks MTP with text and images first, then completes three timing
+batches and four image answers per configuration. Capability results are reused.
+Servers restart between batches. It records simultaneous slot use, latency,
+draft acceptance and memory. Ordinary pp512/tg128 results are saved separately.
+
+With `llama_evaluation_capacity: true`, it runs six capacity checks: one per
+model/backend, one user, MTP off and f16/f16. It starts at the model maximum
+and refines a memory limit in 4K steps. A pass requires every slot to
+process its full input and generate 128 tokens. Results distinguish the largest
+passing context from an operating setting with 512 MiB GPU memory spare.
+These six MTP-off checks use all allocated tokens: input `C - 128`, output 128.
+For a future MTP capacity check, four guard tokens would leave `C - 4` usable
+tokens (input `C - 132`, output 128). Full MTP capacity is not validated here.
+The 16K timing/image matrix uses only part of its allocated context.
+Capacity does not measure long-context image-answer quality.
+The current capacity loop covers one user only. It does not find the maximum
+context for two/four users or MTP on. Extending that coverage requires explicit
+profile selection; do not restart the completed performance/image matrix.
+
+Saved case results and summaries are reused by path, including failures. Reuse
+only when the model hashes, source revision and settings match. Keep failed
+attempts intact and use a new case directory for an authorized retry.
+
+Use isolated builds for a new source revision and a new run directory. Keep the
+original service build intact. This mode preserves the service file and restores
+its previous running state. Quality scoring remains a separate Luna-6 step.
+
 Ansible starts a background job; launch success is not test completion. Inspect
-`status.json` and each case's `result.json`, including service restoration status.
+`status-mtp.json` in MTP mode (`status.json` otherwise) and each case's
+`result.json`, including service restoration status.
 Recorded source revisions identify measured builds, not installation pins.
 
 <a id="image-description-quality"></a>
@@ -135,3 +176,14 @@ matrix. Memory classes distinguish ≤8 GiB, ≤16 GiB and excluded configuratio
 This step runs no GPU inference and makes no Luna-6 calls.
 `reports/index.html` is the handwritten recommendation summary; update it
 separately when conclusions change.
+
+For an MTP run, save the blind judgements as `reviews-luna.json` keyed by the
+image/prompt/answer hash, then generate its tables and image-answer view:
+
+```bash
+python3 evaluation/build_report.py --mtp-run /path/to/run
+```
+
+This writes `reports/mtp.html` and sections 5–6 of `BENCHMARK.md`.
+The existing single-user results stay intact. When `reports/index.html` contains
+the marked recommendations block, the MTP report includes that same summary.

@@ -3,6 +3,9 @@
   ansible.builtin.assert:
     that:
       - llama_evaluation_models | length > 0
+      - llama_evaluation_mode in ['standard', 'mtp-slots-cache']
+      - llama_evaluation_mtp_guard_tokens | int >= 0
+      - llama_evaluation_mtp_guard_tokens | int <= 16
       - llama_evaluation_context | int >= 1024
       - llama_evaluation_caches | length > 0
       - llama_evaluation_caches | difference(['f16', 'q8_0', 'q4_0']) | length == 0
@@ -13,6 +16,13 @@
       - llama_evaluation_service is match('^[A-Za-z0-9_.-]+$')
       - llama_evaluation_retry_from == '' or llama_evaluation_retry_from is match('^/[A-Za-z0-9_./-]+$')
       - llama_evaluation_retry_from != llama_evaluation_dir
+- name: Validate MTP model capacity limits
+  ansible.builtin.assert:
+    that:
+      - item.max_context | default(0) | int >= 16384
+      - item.mmproj is search('BF16')
+  loop: "{{ llama_evaluation_models }}"
+  when: llama_evaluation_mode == 'mtp-slots-cache'
 - name: Prepare the evidence directory
   ansible.builtin.file:
     path: "{{ llama_evaluation_dir }}"
@@ -23,6 +33,11 @@
     src: run.py
     dest: "{{ llama_evaluation_dir }}/run.py"
     mode: '0755'
+- name: Copy MTP evaluation runner
+  ansible.builtin.copy:
+    src: mtp.py
+    dest: "{{ llama_evaluation_dir }}/mtp.py"
+    mode: '0644'
 - name: Copy reference images
   ansible.builtin.copy:
     src: "{{ playbook_dir }}/media/qengineering/"

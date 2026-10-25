@@ -1,5 +1,8 @@
 {{ {
   'models': llama_evaluation_models,
+  'mode': llama_evaluation_mode,
+  'capacity': llama_evaluation_capacity | bool,
+  'mtp_guard_tokens': llama_evaluation_mtp_guard_tokens | int,
   'source': llama_evaluation_source,
   'service': llama_evaluation_service,
   'port': llama_evaluation_port | int,

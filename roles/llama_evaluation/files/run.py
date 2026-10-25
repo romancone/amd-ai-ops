@@ -141,6 +141,11 @@ def fa_failure(path):
             and result.get('status')=='failed'
             and 'GGML_ASSERT(max_blocks_per_sm > 0)' in log_path.read_text(errors='replace'))
 
+if M.get('mode') == 'mtp-slots-cache':
+    import mtp
+    mtp.run()
+    raise SystemExit(0)
+
 cases=[]
 for model in M['models']:
     for backend in M['backends']:

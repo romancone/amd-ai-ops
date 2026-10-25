@@ -2,6 +2,9 @@
 llama_evaluation_dir: /var/tmp/llama-evaluation
 llama_evaluation_source: /opt/llama.cpp
 llama_evaluation_models: []
+llama_evaluation_mode: standard  # mtp-slots-cache: 90 matched configurations at 16K/user
+llama_evaluation_capacity: true  # Six single-user f16/MTP-off capacity checks in MTP mode
+llama_evaluation_mtp_guard_tokens: 4  # Reserved per user in MTP capacity checks
 llama_evaluation_service: llama.service
 llama_evaluation_port: 8081
 llama_evaluation_start_utc: ""

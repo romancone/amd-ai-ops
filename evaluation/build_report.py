@@ -6,12 +6,231 @@ import json
 import re
 from pathlib import Path
 
+def render_mtp(run, repo):
+    import html
+    import statistics as stats
+    esc = lambda value: html.escape(str(value))
+    load = lambda path: json.loads(path.read_text())
+    fmt = lambda value: f'{value:.2f}' if isinstance(value, (float, int)) else '—'
+    reference = load(repo/'evaluation/reference.json')
+    reviews = load(run/'reviews-luna.json') if (run/'reviews-luna.json').exists() else {}
+    state = load(run/'status-mtp.json')
+    headers = ['Model', 'Backend', 'Users', 'MTP', 'K/V cache', 'FA', 'Prompt t/s/user', 'Gen t/s/user',
+               'Total t/s ± SD', 'Speed ratio (on/off)', 'TTFT ms', 'Request s', 'Draft accept %',
+               'Image quality %', 'Peak GPU GiB', 'Peak RAM GiB', 'Status']
+    rows, answers, summaries = [], {}, {}
+    for path in sorted((run/'matched').glob('*/summary.json')):
+        item = load(path)
+        summaries[item['id']] = item
+    for key, item in summaries.items():
+        requests = [r for speed in item['speeds'] for r in speed.get('wave', {}).get('requests', [])]
+        timings = [r.get('response', {}).get('timings', {}) for r in requests]
+        mean = lambda values: stats.mean(values) if values else None
+        qualities = []
+        for wave in item['images']:
+            for sample in wave.get('wave', {}).get('requests', []):
+                image, text = sample.get('image'), sample.get('text', '')
+                if not image or not text:
+                    continue
+                prompt = reference['answers'][image]['prompt']
+                digest = hashlib.sha256((image+'\0'+prompt+'\0'+text).encode()).hexdigest()
+                review = reviews.get(digest, {})
+                if review:
+                    if review.get('answer_sha256') != hashlib.sha256(text.encode()).hexdigest():
+                        raise ValueError('Review does not match answer: '+digest)
+                    quality = sum(review[k] for k in reference['rubric']['dimensions'])
+                    qualities.append(quality)
+                else:
+                    quality = None
+                entry = answers.setdefault(digest, {'configurations': [], 'body': ''})
+                entry['configurations'].append(key)
+                entry['body'] = (f'<summary>{esc(image)} · {fmt(quality)}%</summary>'
+                    f'<img src="../media/qengineering/{esc(image)}.jpg" alt="{esc(image)}">'
+                    f'<p>{esc(prompt)}</p><pre>{esc(text)}</pre>'
+                    f'<p>Finish: {esc(sample.get("response", {}).get("choices", [{}])[0].get("finish_reason", "unknown"))}</p>'
+                    f'<p>{esc(review.get("note", review.get("reason", "Awaiting Luna-6 review")))}</p>')
+        trials = [v['trial'] for v in item['speeds']+item['images']]
+        peak = lambda name: max([t.get('peak_memory_mib', {}).get(name, 0) for t in trials] or [0])/1024
+        off = summaries.get(key.replace('-mtp1', '-mtp0'), {})
+        speedup = (item.get('aggregate_tps_mean', 0)/off['aggregate_tps_mean']
+                   if item['mtp'] and off.get('aggregate_tps_mean') else None)
+        proposed = sum(t.get('draft_n', 0) for t in timings)
+        accepted = sum(t.get('draft_n_accepted', 0) for t in timings)
+        rows.append([item['model']['id'], item['backend'], item['slots'], 'on' if item['mtp'] else 'off',
+            item.get('cache', 'f16')+'/'+item.get('cache', 'f16'), 'on', mean([t['prompt_per_second'] for t in timings if 'prompt_per_second' in t]),
+            mean([t['predicted_per_second'] for t in timings if 'predicted_per_second' in t]),
+            (fmt(item['aggregate_tps_mean'])+' ± '+fmt(item.get('aggregate_tps_sd'))) if item.get('aggregate_tps_mean') is not None else None, speedup,
+            mean([r['ttft_seconds']*1000 for r in requests if r.get('ttft_seconds') is not None]),
+            mean([r['seconds'] for r in requests]), 100*accepted/proposed if proposed else None,
+            mean(qualities) if len(qualities)==4 else None, peak('vram_mib'), peak('rss_mib'), item['status']])
+    supplementary = [row for row in rows if row[2] == 1 and row[3] == 'on']
+    rows = [row for row in rows if not (row[2] == 1 and row[3] == 'on')]
+    baselines = []
+    for path in sorted((run/'baseline').glob('*/bench.json')):
+        data = load(path)
+        pp = next((v for v in data if v.get('n_prompt')==512), {})
+        tg = next((v for v in data if v.get('n_gen')==128), {})
+        baselines.append([path.parent.name, 'on', 'f16/f16', fmt(pp.get('avg_ts'))+' ± '+fmt(pp.get('stddev_ts')), fmt(tg.get('avg_ts'))+' ± '+fmt(tg.get('stddev_ts'))])
+    cap_headers = ['Model', 'Backend', 'FA', 'Max allocated / usable tokens',
+                   'KV MiB', 'Practical allocated / usable tokens', 'Practical GPU free MiB', 'Upper test tokens',
+                   'Full-prompt t/s', 'Generation t/s', 'Peak GPU GiB', 'Peak RAM GiB',
+                   'Peak GTT GiB', 'Boundary / status']
+    caps = []
+    cap_passed = 0
+    capacity_failures = []
+    for path in sorted((run/'capacity').glob('*/summary.json')):
+        item = load(path)
+        if item['slots'] != 1 or item['mtp'] or item['cache'] != 'f16':
+            continue
+        limit = item['largest_passing_per_user']
+        cap_passed += bool(limit and item['practical_per_user'])
+        if not limit:
+            lost = [load(q)['context_per_user'] for q in path.parent.glob('ctx-*/full/result.json')
+                    if load(q).get('status') == 'device_lost']
+            if lost:
+                capacity_failures.append(item['model']+'/'+item['backend']+': ErrorDeviceLost at '+
+                                         ', '.join(f'{n:,}' for n in sorted(lost))+' allocated tokens. No full-capacity limit is established; its 16K timing and image tests passed.')
+        guard = item.get('guard_tokens_per_user', 0)
+        pair = lambda value: f'{value:,} / {value-guard:,}' if value else None
+        full_dir = item.get('full_result_dir', 'full')
+        peaks = {'vram_mib': 0, 'rss_mib': 0, 'gtt_mib': 0}
+        kv_mib = None
+        full_timing = {}
+        if limit:
+            for kind in [full_dir, 'image-memory']:
+                trial = load(path.parent/f'ctx-{limit}'/kind/'trial.json')
+                if kind == full_dir:
+                    full_result = load(path.parent/f'ctx-{limit}'/kind/'result.json')
+                    full_timing = full_result['wave']['requests'][0]['response']['timings']
+                    kv_mib = sum(float(v) for line in trial.get('allocations', [])
+                        for v in re.findall(r'(?:ROCm|Vulkan)\d+ KV buffer size\s*=\s*([\d.]+) MiB', line))
+                for field in peaks:
+                    peaks[field] = max(peaks[field], trial.get('peak_memory_mib', {}).get(field, 0))
+        failed_memory = False
+        if not limit:
+            native = next(m['max_context'] for m in load(run/'manifest.json')['models'] if m['id']==item['model'])
+            failed_trial = path.parent/f'ctx-{native}'/full_dir/'trial.json'
+            if failed_trial.exists():
+                trial = load(failed_trial)
+                failed_memory = True
+                peaks.update(trial.get('peak_memory_mib', {}))
+                kv_mib = sum(float(v) for line in trial.get('allocations', [])
+                    for v in re.findall(r'(?:ROCm|Vulkan)\d+ KV buffer size\s*=\s*([\d.]+) MiB', line))
+        status = ('model limit' if limit==next(m['max_context'] for m in load(run/'manifest.json')['models'] if m['id']==item['model'])
+                  else '4K boundary' if item['boundary_resolved'] else 'lower bound' if limit else 'not established')
+        if not limit:
+            status += ': '+', '.join(str(p.get('full', p.get('probe'))) for p in item['points'][-1:])
+        practical_free = None
+        if item['practical_per_user']:
+            practical_peak = max(load(path.parent/f"ctx-{item['practical_per_user']}"/kind/'trial.json')
+                                 ['peak_memory_mib']['vram_mib'] for kind in [full_dir, 'image-memory'])
+            practical_free = item.get('gpu_budget_mib', 16384)-practical_peak
+        caps.append([item['model'], item['backend'], 'on', pair(limit), kv_mib,
+            pair(item['practical_per_user']), practical_free, item['upper_bound_per_user'],
+            full_timing.get('prompt_per_second'), full_timing.get('predicted_per_second'),
+            peaks['vram_mib']/1024 if limit or failed_memory else None, peaks['rss_mib']/1024 if limit or failed_memory else None,
+            peaks['gtt_mib']/1024 if limit or failed_memory else None, status])
+    def table(head, values):
+        body = ''.join('<tr>'+''.join('<td>'+esc(fmt(v) if v is None or isinstance(v,float) else v)+'</td>' for v in row)+'</tr>' for row in values)
+        return '<div class="table-wrap"><table><thead><tr>'+''.join('<th>'+esc(v)+'</th>' for v in head)+'</tr></thead><tbody>'+body+'</tbody></table></div>'
+    style = (repo/'reports/index.html').read_text().split('<style>', 1)[1].split('</style>', 1)[0]
+    doc = '<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
+    doc += '<title>AMD MTP, users and cache capacity</title><style>'+style+'pre{white-space:pre-wrap}img{max-width:500px;width:100%}details{margin:16px 0}th,td{white-space:nowrap}</style><main>'
+    doc += '<nav><a href="index.html">Model recommendations</a><a href="report.html">Single-user tests</a><a href="../BENCHMARK.md">Benchmark tables</a></nav><h1>MTP, users and cache capacity</h1>'
+    doc += f'<p>RX 6900 XT 16 GiB · llama.cpp <code>{esc(state["source_revision"][:9])}</code>.</p>'
+    doc += f'<p>Matched results: {len(rows)}/90. Capacity checks: {len(caps)}/6 recorded, {cap_passed} validated, {len(caps)-cap_passed} unresolved.</p>'
+    overview = (repo/'reports/index.html').read_text()
+    if '<!-- recommendations:start -->' in overview and '<!-- recommendations:end -->' in overview:
+        recommendations = overview.split('<!-- recommendations:start -->', 1)[1].split('<!-- recommendations:end -->', 1)[0]
+        doc += recommendations
+    doc += '<h2>3. Detailed results</h2><h3>3.1 Matched tests at 16K per user</h3><details><summary>How to read the measurements</summary><p>The main matrix has 18 single-user MTP-off profiles and 72 two/four-user MTP-off/on profiles across f16/f16, Q8/Q8 and Q4/Q4 caches. Six additional single-user MTP-on profiles appear in section 3.2. Three batches per row; each request reads 512 and generates 128 tokens. Total t/s includes prompt and request time. Gen t/s/user uses server decode timing. Speed ratio is total t/s with MTP on divided by MTP off for the same profile; above 1 means faster, below 1 means slower. Each profile has four image answers once each, scored against Luna-6. See section 2.1 for allocated context and full-fill limits.</p>'
+    doc += '<p>Qwen uses the dedicated MTP-GGUF target in both modes. Gemma uses matching Q4 draft files only when MTP is on. Each image wave and timing batch starts a fresh server. Timing uses one fixed inventory/checklist task, not a broad workload sample.</p>'
+    doc += '</details>'+table(headers, rows)
+    if supplementary:
+        doc += '<h3>3.2 Single-user MTP-on results</h3><details><summary>Show six f16/f16 profiles</summary>'+table(headers, supplementary)+'</details>'
+    doc += '<h3>3.3 Ordinary llama-bench</h3><p>pp512/tg128, three repetitions, 16K allocation, microbatch 512. These measure one user with MTP off.</p>'
+    doc += table(['Model / backend', 'FA', 'Cache', 'pp512 ± SD', 'tg128 ± SD'], baselines)
+    doc += '<h3>3.4 Full-context measurements</h3><p>Detailed measurements for the six one-user, MTP-off, f16/f16 checks in section 2.1. Context values are exact tokens. Memory refers to the largest passing context, or the failed native attempt when no pass exists. Practical GPU free is the smallest sampled headroom during full-fill and image checks. Capacity does not establish long-context image quality. RAM is process RSS; GPU-accessible host memory is recorded separately in raw evidence.</p>'
+    boundary_path = run/'strict-boundary-checks.json'
+    boundary_notice = ''
+    if boundary_path.exists():
+        boundary = load(boundary_path)
+        if boundary:
+            boundary_notice = 'Earlier unguarded MTP boundary checks (outside the six checks): '+ '; '.join(
+                f"{v['model']}/{v['backend']}, {v['slots']} user, {v['cache']}, {v['context_per_user']:,} tokens: generated {', '.join(map(str, v['outputs']))} of 128 requested" for v in boundary)+'. These are not memory failures or capacity passes.'
+            doc += '<p>'+esc(boundary_notice)+'</p>'
+    doc += ''.join('<p>'+esc(note)+'</p>' for note in capacity_failures)
+    doc += table(cap_headers, caps)
+    doc += '<h3>3.5 Image answers</h3><p>Identical image/prompt/answer combinations share one view and judgement.</p>'+''.join(
+        '<details>'+value['body']+'<p>Configurations: '+esc(', '.join(value['configurations']))+'</p></details>'
+        for value in answers.values())+'</main></html>'
+    (repo/'reports/mtp.html').write_text(doc)
+    def markdown(head, values):
+        return '\n'.join(['| '+' | '.join(head)+' |', '| '+' | '.join(['---']*len(head))+' |']+
+            ['| '+' | '.join(str(fmt(v) if v is None or isinstance(v,float) else v).replace('|','/') for v in row)+' |' for row in values])
+    save_path = run/'condensed-tables.md'
+    save_path.write_text('## MTP at 16K per user\n\n'+markdown(headers,rows)+'\n\n## Cache capacity\n\n'+markdown(cap_headers,caps)+'\n')
+    benchmark = repo/'BENCHMARK.md'
+    prefix = benchmark.read_text().split('## 5. MTP and simultaneous users')[0].rstrip()
+    intro = f'''
+
+## 5. MTP and simultaneous users
+
+[Full MTP report and image answers](reports/mtp.html). {len(rows)}/90 configurations recorded; {sum(v["status"] == "passed" and not (v["slots"] == 1 and v["mtp"]) for v in summaries.values())} passed.
+16K per user means 16K/32K/64K total. Cache: f16/f16, q8_0/q8_0 and q4_0/q4_0; FA and unified KV on;
+BF16 projectors; thinking off; at most three draft tokens. Each row has three
+simultaneous timing batches (512 input / 128 output tokens per request) and
+four image answers once each. Servers restart
+between batches. Qwen uses the dedicated MTP-GGUF target in both modes. The timing prompt is a
+fixed inventory/checklist task, not a broad workload sample.
+
+Prompt and generation rates are per-user means from server timings. Total t/s includes prompt time;
+speed ratio divides MTP-on total t/s by MTP-off total t/s for the same profile. TTFT means time to first token. Image quality
+averages four Luna-6 scores. Small differences do not establish general accuracy.
+Each slot allocates 16,384 tokens; the timing/image requests do not fill it.
+The four-token MTP guard would leave 16,380 usable tokens per slot, but that
+full MTP capacity is not validated here. GPU and process RAM are sampled peaks.
+Ordinary pp512/tg128 stays separate.
+
+'''
+    capacity_intro = f'''
+
+## 6. Cache capacity
+
+{len(caps)}/6 checks recorded: {cap_passed} validated, {len(caps)-cap_passed} unresolved. One user, MTP off, f16/f16. Status: {state['status']}. Context values are exact tokens.
+Allocated is the KV pool per user; usable is input plus output.
+These six checks use MTP off, so allocated and usable context are equal.
+Input = allocated minus 128; output = 128. No MTP capacity claim is made.
+Memory refers to the largest passing context, or the failed native attempt when no pass exists. Practical GPU free is the
+smallest sampled headroom during the practical full fill and image check;
+it must be at least 512 MiB. Memory is sampled once per second.
+Lower bounds are not proven maxima. Upper bounds may be tested failures or
+conservative memory exclusions. Capacity does not establish long-context image quality.
+KV MiB sums logged GPU KV buffers; recurrent state is separate.
+GTT includes host staging buffers and is not, by itself, proof of GPU memory spill.
+RAM and GPU-accessible host memory (GTT) can overlap; do not add them together.
+
+'''
+    baseline_intro = '\n\n### Ordinary llama-bench at 16K\n\nThree pp512/tg128 repetitions, MTP off, one user, microbatch 512.\nThese are separate from server MTP timings.\n\n'
+    supplement = '\n\n### Earlier single-user MTP-on results\n\nSaved f16/f16 checks, outside the approved 90-configuration matrix.\n\n'+markdown(headers,supplementary) if supplementary else ''
+    benchmark.write_text(prefix+intro+markdown(headers,rows)+supplement+baseline_intro+
+        markdown(['Model / backend', 'FA', 'Cache', 'pp512 ± SD', 'tg128 ± SD'], baselines)+
+        capacity_intro+(boundary_notice+'\n\n' if boundary_notice else '')+'\n\n'.join(capacity_failures)+'\n\n'+markdown(cap_headers,caps)+'\n')
+    print(f'Rendered {len(rows)} matched rows, {len(caps)} capacity curves and {len(answers)} unique answers.')
+
+
 parser=argparse.ArgumentParser()
-parser.add_argument('run',type=Path)
+parser.add_argument('run',type=Path,nargs='?')
+parser.add_argument('--mtp-run',type=Path,help='Render matched MTP and capacity results in reports/mtp.html')
 parser.add_argument('--patched-run',type=Path,action='append',default=[])
 parser.add_argument('--additional-run',type=Path,action='append',default=[])
 parser.add_argument('--reviews',type=Path,help='Luna reference-based judgements; original checklist reviews are not used')
 args=parser.parse_args()
+if args.mtp_run:
+    render_mtp(args.mtp_run, Path(__file__).resolve().parent.parent)
+    raise SystemExit(0)
+if args.run is None:
+    parser.error('provide a run directory or --mtp-run')
 extra_runs = args.patched_run + args.additional_run
 root=Path(__file__).resolve().parent
 manifest=json.loads((args.run/'manifest.json').read_text())
