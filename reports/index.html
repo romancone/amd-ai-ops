@@ -9,40 +9,56 @@
 <body><main>
 <nav class="report-nav" aria-label="Reports"><a href="index.html" aria-current="page">Recommendations</a><a href="report.html">Model tests</a><a href="mtp.html">MTP and users</a></nav>
 <h1>Choose a model for your home GPU</h1>
-<p>Measured on an RX 6900 XT with 16 GiB GPU memory. Start with the choices below, then open the full results for detailed comparisons.</p>
+<p>Measured on an RX 6900 XT with 16 GiB GPU memory.</p>
 <!-- recommendations:start -->
 <section id="recommendations"><h2>1. Recommended profiles</h2>
-<p><strong>Shared settings:</strong> 16K context per user, Flash Attention (FA) on, unified KV on, thinking off and BF16 image projectors. MTP predicts up to three draft tokens; it can speed up or slow down answers.</p>
-<p><strong>Image-priority winners: Qwen for 1 user; Gemma 12B for 2 and 4 users.</strong> Winners compare the selected profiles below; speed and memory tradeoffs stay visible.</p>
-<p>Every arrow reads <strong>MTP off → on</strong>, with the same backend, cache and user count. Bold values show the recommended state. Speed change = (on ÷ off − 1) × 100. Positive is faster; negative is slower. Total t/s includes prompt time and is shared across users.</p>
-<p class="small">Quality is the mean of four image-description scores against Luna-6, not overall accuracy. Small score differences do not prove a repeatable advantage. Memory is the sampled GPU peak.</p>
+<p><strong>Shared settings:</strong></p>
+<ul>
+<li>Context: 16K per user</li>
+<li>Flash Attention (FA): on</li>
+<li>Unified KV cache: on</li>
+<li>Thinking: off</li>
+<li>Image projectors: BF16</li>
+<li>MTP: up to three draft tokens when enabled</li>
+</ul>
+<p><strong>Set MTP ON for:</strong></p>
+<ul>
+<li>Gemma 12B/HIP: 1, 2 and 4 users</li>
+<li> Qwen and E4B: 1 user</li>
+</ul>
+<p><strong>Set MTP OFF for:</strong></p>
+<ul>
+<li>Qwen and E4B: 2 or 4 users</li>
+</ul>
+<p>The tables compare <strong>MTP off → on</strong>: + means faster answers, and − means slower answers.</p>
 <h3>1.1 One user</h3>
-<div class="table-wrap"><table><thead><tr><th>Model</th><th>Backend</th><th>K/V cache</th><th>Use MTP</th><th>Total t/s off → on</th><th>Speed change</th><th>Image quality % off → on</th><th>Peak GPU GiB off → on</th><th>Choice</th></tr></thead><tbody>
-<tr><td>Qwen 9B Q4_K_M</td><td>Vulkan</td><td>f16/f16</td><td><strong>On</strong></td><td>59.53 → <strong>67.40</strong></td><td>+13.2%</td><td>94.00 → <strong>97.25</strong></td><td>7.01 → <strong>7.78</strong></td><td><strong>Image-priority winner</strong></td></tr>
-<tr><td>Gemma 12B Q4_0</td><td>HIP</td><td>f16/f16</td><td><strong>On</strong></td><td>42.93 → <strong>70.01</strong></td><td>+63.1%</td><td>92.50 → <strong>92.75</strong></td><td>8.71 → <strong>9.12</strong></td><td>Speed winner</td></tr>
+<div class="table-wrap"><table><thead><tr><th>Model</th><th>Backend</th><th>K/V cache</th><th>Speed t/s off → on</th><th>MTP change</th><th>Image quality % off → on</th><th>Peak GPU GiB off → on</th></tr></thead><tbody>
+<tr><td>Qwen 9B Q4_K_M</td><td>Vulkan</td><td>f16/f16</td><td>59.53 → 67.40</td><td>+13.2%</td><td>94.00 → 97.25</td><td>7.01 → 7.78</td></tr>
+<tr><td>Gemma 12B Q4_0</td><td>HIP</td><td>f16/f16</td><td>42.93 → 70.01</td><td>+63.1%</td><td>92.50 → 92.75</td><td>8.71 → 9.12</td></tr>
 </tbody></table></div>
+<p><strong>Image quality winner:</strong> Qwen. <strong>Speed winner:</strong> Gemma 12B.</p>
 <h3>1.2 Two users</h3>
-<div class="table-wrap"><table><thead><tr><th>Model</th><th>Backend</th><th>K/V cache</th><th>Use MTP</th><th>Total t/s off → on</th><th>Speed change</th><th>Image quality % off → on</th><th>Peak GPU GiB off → on</th><th>Choice</th></tr></thead><tbody>
-<tr><td>Gemma 12B Q4_0</td><td>HIP</td><td>Q4/Q4</td><td><strong>On</strong></td><td>65.31 → <strong>88.82</strong></td><td>+36.0%</td><td>93.75 → <strong>99.25</strong></td><td>8.24 → <strong>8.71</strong></td><td><strong>Image-priority and speed winner</strong></td></tr>
-<tr><td>Qwen 9B Q4_K_M</td><td>HIP</td><td>f16/f16</td><td><strong>Off</strong></td><td><strong>87.49</strong> → 76.25</td><td>−12.9%</td><td><strong>97.75</strong> → 94.50</td><td><strong>8.07</strong> → 9.02</td><td>Lower memory</td></tr>
+<div class="table-wrap"><table><thead><tr><th>Model</th><th>Backend</th><th>K/V cache</th><th>Speed t/s off → on</th><th>MTP change</th><th>Image quality % off → on</th><th>Peak GPU GiB off → on</th></tr></thead><tbody>
+<tr><td>Gemma 12B Q4_0</td><td>HIP</td><td>Q4/Q4</td><td>65.31 → 88.82</td><td>+36.0%</td><td>93.75 → 99.25</td><td>8.24 → 8.71</td></tr>
+<tr><td>Qwen 9B Q4_K_M</td><td>HIP</td><td>f16/f16</td><td>87.49 → 76.25</td><td>−12.9%</td><td>97.75 → 94.50</td><td>8.07 → 9.02</td></tr>
 </tbody></table></div>
+<p><strong>Image quality and speed winner:</strong> Gemma 12B. <strong>Memory winner:</strong> Qwen.</p>
+<p class="small">Gemma 12B/HIP/f16/f16/MTP on is a faster alternative at 92.34 t/s, 97.25% and 9.77 GiB.</p>
 <h3>1.3 Four users</h3>
-<div class="table-wrap"><table><thead><tr><th>Model</th><th>Backend</th><th>K/V cache</th><th>Use MTP</th><th>Total t/s off → on</th><th>Speed change</th><th>Image quality % off → on</th><th>Peak GPU GiB off → on</th><th>Choice</th></tr></thead><tbody>
-<tr><td>Gemma 12B Q4_0</td><td>HIP</td><td>f16/f16</td><td><strong>On</strong></td><td>103.73 → <strong>117.42</strong></td><td>+13.2%</td><td>97.50 → <strong>96.75</strong></td><td>10.53 → <strong>11.05</strong></td><td><strong>Image-priority winner</strong></td></tr>
-<tr><td>Qwen 9B Q4_K_M</td><td>Vulkan</td><td>f16/f16</td><td><strong>Off</strong></td><td><strong>132.22</strong> → 81.65</td><td>−38.2%</td><td><strong>94.50</strong> → 93.00</td><td><strong>8.86</strong> → 10.27</td><td>Speed and memory winner</td></tr>
+<div class="table-wrap"><table><thead><tr><th>Model</th><th>Backend</th><th>K/V cache</th><th>Speed t/s off → on</th><th>MTP change</th><th>Image quality % off → on</th><th>Peak GPU GiB off → on</th></tr></thead><tbody>
+<tr><td>Gemma 12B Q4_0</td><td>HIP</td><td>f16/f16</td><td>103.73 → 117.42</td><td>+13.2%</td><td>97.50 → 96.75</td><td>10.53 → 11.05</td></tr>
+<tr><td>Qwen 9B Q4_K_M</td><td>Vulkan</td><td>f16/f16</td><td>132.22 → 81.65</td><td>−38.2%</td><td>94.50 → 93.00</td><td>8.86 → 10.27</td></tr>
 </tbody></table></div>
-<p class="small">Two-user Gemma 12B/HIP/f16/f16/MTP on is a faster alternative at 92.34 t/s, 97.25% and 9.77 GiB.</p>
+<p><strong>Image quality winner:</strong> Gemma 12B. <strong>Speed and memory winner:</strong> Qwen.</p>
 <h3>1.4 Other measured profiles</h3>
-<p>E4B saves memory and generates faster, with lower image scores. Gemma 12B/Vulkan/Q8/Q8 matches Qwen’s one-user image score but is slower; its MTP-on case was not tested.</p>
-<div class="table-wrap"><table><thead><tr><th>Model</th><th>Users</th><th>Backend</th><th>K/V cache</th><th>Off t/s</th><th>On t/s</th><th>MTP change</th><th>Image quality % off → on</th><th>Peak GPU GiB off → on</th></tr></thead><tbody>
-<tr><td>Gemma 12B Q4_0</td><td>1</td><td>Vulkan</td><td>Q8/Q8</td><td>41.43</td><td>Not tested</td><td>—</td><td>97.25 → —</td><td>7.94 → —</td></tr>
-<tr><td>Gemma E4B Q4_0</td><td>1</td><td>Vulkan</td><td>f16/f16</td><td>86.35</td><td>107.52</td><td>+24.5%</td><td>77.50 → 77.25</td><td>4.64 → 4.77</td></tr>
-<tr><td>Gemma E4B Q4_0</td><td>2</td><td>Vulkan</td><td>f16/f16</td><td>142.88</td><td>123.88</td><td>-13.3%</td><td>76.75 → 78.00</td><td>4.95 → 5.11</td></tr>
-<tr><td>Gemma E4B Q4_0</td><td>4</td><td>HIP</td><td>Q4/Q4</td><td>179.91</td><td>164.35</td><td>-8.7%</td><td>77.75 → 79.25</td><td>5.31 → 5.78</td></tr>
+<div class="table-wrap"><table><thead><tr><th>Model</th><th>Users</th><th>Backend</th><th>K/V cache</th><th>Speed t/s off → on</th><th>MTP change</th><th>Image quality % off → on</th><th>Peak GPU GiB off → on</th></tr></thead><tbody>
+<tr><td>Gemma 12B Q4_0</td><td>1</td><td>Vulkan</td><td>Q8/Q8</td><td>41.43 → Not tested</td><td>—</td><td>97.25 → —</td><td>7.94 → —</td></tr>
+<tr><td>Gemma E4B Q4_0</td><td>1</td><td>Vulkan</td><td>f16/f16</td><td>86.35 → 107.52</td><td>+24.5%</td><td>77.50 → 77.25</td><td>4.64 → 4.77</td></tr>
+<tr><td>Gemma E4B Q4_0</td><td>2</td><td>Vulkan</td><td>f16/f16</td><td>142.88 → 123.88</td><td>-13.3%</td><td>76.75 → 78.00</td><td>4.95 → 5.11</td></tr>
+<tr><td>Gemma E4B Q4_0</td><td>4</td><td>HIP</td><td>Q4/Q4</td><td>179.91 → 164.35</td><td>-8.7%</td><td>77.75 → 79.25</td><td>5.31 → 5.78</td></tr>
 </tbody></table></div>
 <h3>1.5 Image-score breakdown</h3>
-<details><summary>Gemma 12B, two users: 93.75% → 99.25%</summary>
-<p>With HIP and Q4/Q4 cache, the improvement came from Great Wall and Singapore, not Titanic.</p>
+<details><summary>Gemma 12B, two users, HIP, Q4/Q4</summary>
 <div class="table-wrap"><table><thead><tr><th>Image</th><th>MTP off</th><th>MTP on</th><th>Change</th></tr></thead><tbody>
 <tr><td>Great Wall</td><td>86</td><td>99</td><td>+13 points</td></tr>
 <tr><td>Singapore</td><td>89</td><td>98</td><td>+9 points</td></tr>
@@ -50,24 +66,51 @@
 <tr><td>Pizza</td><td>100</td><td>100</td><td>No change</td></tr>
 <tr><th>Mean</th><td>93.75</td><td><strong>99.25</strong></td><td>+5.50 points</td></tr>
 </tbody></table></div>
-<p>The MTP-on answer avoided unsupported Great Wall claims and included Singapore’s ArtScience Museum. These are saved Luna-6 judgements from one answer per image.</p>
+<p>MTP on removed unsupported Great Wall claims and named Singapore’s ArtScience Museum.</p>
 </details>
-<h2>2. Context and memory</h2>
-<h3 id="context-limits">2.1 Full-context limits</h3>
-<p><strong>No 4 × 256K result is established.</strong> The 1/2/4-user speed and image tests allocated 16,384 tokens per user: 16,384 / 32,768 / 65,536 total. Their requests did not fill those allocations. Full-cache thresholds for 2 or 4 users, or with MTP on, remain unknown.</p>
-<p>The six full-context checks used <strong>one user, MTP off and f16/f16 cache</strong>. A pass processed context minus 128 input tokens and generated 128 tokens without dropping input or shifting context.</p>
-<div class="table-wrap"><table><thead><tr><th>Model</th><th>Backend</th><th>Largest full-context pass</th><th>Practical context</th></tr></thead><tbody>
-<tr><td>Gemma E4B Q4_0</td><td>HIP</td><td>131,072 (128K)</td><td>131,072</td></tr>
-<tr><td>Gemma E4B Q4_0</td><td>Vulkan</td><td>131,072 (128K)</td><td>131,072</td></tr>
-<tr><td>Gemma 12B Q4_0</td><td>HIP</td><td>262,144 (256K)</td><td>262,144</td></tr>
-<tr><td>Gemma 12B Q4_0</td><td>Vulkan</td><td>262,144 (256K)</td><td>262,144</td></tr>
-<tr><td>Qwen 9B MTP-GGUF Q4_K_M</td><td>HIP</td><td>262,144 (256K)</td><td>249,856 (244K)</td></tr>
-<tr><td>Qwen 9B MTP-GGUF Q4_K_M</td><td>Vulkan</td><td>Not established</td><td>Not established</td></tr>
+<h2 id="context-limits">2. Maximum context recommendations</h2>
+<p>Maximum verified context size per user on the 16 GiB card
+using the <a href="mtp.html#context-limits">tested configurations</a>.</br>
+<p>Context size is input and output tokens per user<p>
+<p>Total context (--ctx-size) = users × (usable context + MTP reserve)</p>
+</p> Smaller contexts with the same settings use less GPU memory.</p>
+<p><strong>Model Context settings:</strong></p>
+<ul>
+<li>Gemma 12B: 262,140</li>
+<li>Qwen 9B MTP: 262,140</li>
+<li>Gemma E4B: 131,068</li>
+</ul>
+<p><strong>Shared Context settings:</strong></p>
+<ul>
+<li>Thinking: off</li>
+<li>Flash Attention (FA): on</li>
+<li>Unified KV cache: on</li>
+<li>Up to three draft tokens; reserves four tokens per user when enabled</li>
+</ul>
+
+
+<h3>2.1 One user</h3>
+<div class="table-wrap"><table><thead><tr><th>Model</th><th>Backend</th><th>K/V cache</th><th>MTP</th><th>Max usable tokens/user</th></tr></thead><tbody>
+<tr><td>Gemma 12B Q4_0</td><td>HIP / Vulkan</td><td>f16/f16</td><td>on</td><td>262,140</td></tr>
+<tr><td>Gemma E4B Q4_0</td><td>HIP / Vulkan</td><td>f16/f16</td><td>on</td><td>131,068</td></tr>
+<tr><td>Qwen 9B MTP Q4_K_M</td><td>HIP</td><td>Q4/Q4</td><td>on</td><td>262,140</td></tr>
+<tr><td>Qwen 9B MTP Q4_K_M</td><td>Vulkan</td><td>f16/f16</td><td>on</td><td>131,068</td></tr>
 </tbody></table></div>
-<p class="small">With MTP off, allocated and usable context are equal. Practical settings left at least 512 MiB GPU memory spare during full-fill and image checks; Qwen/HIP left 525.65 MiB at 244K. E4B and Gemma 12B reached their model limits, not a proven hardware failure threshold. Qwen/Vulkan lost the device at 252K and 256K; its 16K short-request tests passed. Do not multiply the one-user limits by the number of users.</p>
-<p class="small">For MTP, four guard tokens would reduce a 16,384-token allocation to 16,380 usable tokens per user. That is the intended input/output budget, not a validated full-fill capacity. Q8/Q8 and Q4/Q4 full-context thresholds are not established by these six checks.</p>
-<h3>2.2 8 vs 16 GiB GPU memory</h3>
-<p>At 16K per user, MTP uses extra memory. Turning it off can make room for other apps; the paired measurements are in section 1.</p>
+<h3>2.2 Two users</h3>
+<div class="table-wrap"><table><thead><tr><th>Model</th><th>Backend</th><th>K/V cache</th><th>MTP</th><th>Max usable tokens/user</th></tr></thead><tbody>
+<tr><td>Gemma 12B Q4_0</td><td>HIP / Vulkan</td><td>Q4/Q4</td><td>on</td><td>262,140</td></tr>
+<tr><td>Gemma E4B Q4_0</td><td>HIP / Vulkan</td><td>f16/f16</td><td>off</td><td>131,072</td></tr>
+<tr><td>Qwen 9B MTP Q4_K_M</td><td>HIP / Vulkan</td><td>Q4/Q4</td><td>off</td><td>262,144</td></tr>
+</tbody></table></div>
+<h3>2.3 Four users</h3>
+<div class="table-wrap"><table><thead><tr><th>Model</th><th>Backend</th><th>K/V cache</th><th>MTP</th><th>Max usable tokens/user</th></tr></thead><tbody>
+<tr><td>Gemma 12B Q4_0</td><td>HIP / Vulkan</td><td>Q4/Q4</td><td>on</td><td>131,068</td></tr>
+<tr><td>Gemma E4B Q4_0</td><td>HIP</td><td>f16/f16</td><td>off</td><td>131,072</td></tr>
+<tr><td>Gemma E4B Q4_0</td><td>Vulkan</td><td>Q8/Q8</td><td>off</td><td>131,072</td></tr>
+<tr><td>Qwen 9B MTP Q4_K_M</td><td>HIP / Vulkan</td><td>Q4/Q4</td><td>off</td><td>131,072</td></tr>
+</tbody></table></div>
+<h2>3. 8 vs 16 GiB GPU memory</h2>
+<p>16K per user, without filling the context.</p>
 <div class="table-wrap"><table><thead><tr><th>GPU budget</th><th>Choice</th><th>Users</th><th>MTP</th><th>Peak GPU GiB</th></tr></thead><tbody>
 <tr><td>8 GiB — more spare room</td><td>E4B: Vulkan/f16 for 1–2 users; HIP/Q4 for 4</td><td>1 / 2 / 4</td><td>On / Off / Off</td><td>4.77 / 4.95 / 5.31</td></tr>
 <tr><td>8 GiB — image-quality option</td><td>Qwen / Vulkan / f16/f16</td><td>1</td><td>Off</td><td>7.01</td></tr>
@@ -76,15 +119,15 @@
 <tr><td>16 GiB</td><td>Gemma 12B / HIP: f16 for 1 and 4 users; Q4 for 2</td><td>1 / 2 / 4</td><td>On</td><td>9.12 / 8.71 / 11.05</td></tr>
 <tr><td>16 GiB</td><td>Qwen / f16/f16: HIP for 2 users; Vulkan for 4</td><td>2 / 4</td><td>Off</td><td>8.07 / 8.86</td></tr>
 </tbody></table></div>
-<p class="small">All measurements used a 16 GiB card. Below 8 GiB does not establish a pass on an 8 GiB card. Qwen/MTP on leaves only about 225 MiB of an 8 GiB budget; Gemma 12B/Vulkan leaves about 61 MiB. Choose the lower-memory option when sharing the GPU with a desktop. These are GPU readings, not system RAM requirements or fully filled-context peaks.</p>
-<p class="small"><strong>Above 16 GiB:</strong> configurations estimated to exceed the card’s memory were excluded. Q8 weights with f16 cache at 256K for Qwen and Gemma 12B are among those exclusions; they are not MTP capacity results.</p>
+<p class="small">8 GiB cards were not tested. Leave room for desktop apps.</p>
+<p class="small"><strong>Above 16 GiB:</strong> estimated memory exclusions include Qwen and Gemma 12B Q8 weights with f16 cache at 256K.</p>
 </section>
 <!-- recommendations:end -->
-<h2>3. Q4 vs Q8 weights</h2>
-<details><summary>Show weight and maximum-context comparisons</summary><p>Single-user weight comparisons use MTP off and separate llama-bench prompt/answer timings. Their scores and memory snapshots are separate from the server throughput and peak memory above.</p><article aria-labelledby="quant-quality"><h3 id="quant-quality">3.1 Image quality</h3>
-<p>Q8 offers no consistent image-quality advantage in these tests. For Qwen, use <strong>Q4_K_M with Vulkan, f16/f16 cache and Flash Attention on.</strong></p></article>
-<p>Additional memory-saving result: Qwen Q4_K_M/Vulkan with Q4/Q4 cache used 6.63 GiB and scored 97.75%. This was measured on a 16 GiB card.</p>
-<p><strong>Reading the tables:</strong> pp512 is prompt-reading speed; tg128 is answer-generation speed, in tokens (pieces of text) per second. Higher is faster. VRAM is GPU memory.</p>
+<h2>4. Q4 vs Q8 weights</h2>
+<details><summary>Show comparisons</summary><p>One user, MTP off.</p><article aria-labelledby="quant-quality"><h3 id="quant-quality">4.1 Image quality</h3>
+<p>Q8 offers no consistent image-quality advantage in these tests.</p></article>
+<p>Qwen Q4_K_M/Vulkan with Q4/Q4 cache used 6.63 GiB and scored 97.75%.</p>
+<p><strong>llama-bench:</strong> pp512 = prompt-reading speed; tg128 = answer speed, both in tokens per second. VRAM = GPU memory.</p>
 <div class="table-wrap"><table><caption>HIP / Vulkan, FA on, 16K per user</caption><thead><tr><th>Model / weights</th><th>K/V cache</th><th>Image quality %</th><th>pp512 (t/s)</th><th>tg128 (t/s)</th><th>VRAM snapshot GiB</th></tr></thead><tbody>
 <tr><th>Gemma 4 E4B Q4_0</th><td>f16/f16</td><td class="num">84.25 / 83.00</td><td class="num">3436.03 / 3325.99</td><td class="num">93.10 / 108.29</td><td class="num">4.99 / 4.64</td></tr>
 <tr><th>Gemma 4 E4B Q8_0</th><td>q4_0/q4_0</td><td class="num">82.50 / 82.25</td><td class="num">3293.96 / 2530.29</td><td class="num">61.10 / 73.29</td><td class="num">6.62 / 6.31</td></tr>
@@ -93,8 +136,8 @@
 <tr><th>Qwen3.5-9B Q4_K_M</th><td>f16/f16</td><td class="num">92.75 / 98.75</td><td class="num">1546.50 / 1537.75</td><td class="num">68.18 / 75.00</td><td class="num">7.33 / 7.00</td></tr>
 <tr><th>Qwen3.5-9B Q8_0</th><td>q4_0/q4_0</td><td class="num">96.50 / 96.25</td><td class="num">2020.57 / 1584.19</td><td class="num">45.51 / 49.92</td><td class="num">10.08 / 9.74</td></tr>
 </tbody></table></div>
-<h3>3.2 Maximum context</h3>
-<div class="table-wrap"><table><caption>Q8 weights, Q4/Q4 cache, FA on</caption><thead><tr><th>Model</th><th>Backend</th><th>Context</th><th>Capacity</th><th>Peak VRAM GiB</th><th>Image quality %</th><th>Prompt reading (s)</th><th>Generation at limit (t/s)</th></tr></thead><tbody>
+<h3>4.2 Maximum context</h3>
+<div class="table-wrap"><table><caption>Q8 weights, Q4/Q4 cache, FA on</caption><thead><tr><th>Model</th><th>Backend</th><th>Context</th><th>Capacity</th><th>Measured VRAM GiB</th><th>Image quality %</th><th>Prompt reading (s)</th><th>Generation at limit (t/s)</th></tr></thead><tbody>
 <tr><th>Gemma 4 E4B</th><td>hip</td><td>131,072</td><td>passed</td><td>7.85</td><td>82.50</td><td>121.51</td><td>26.57</td></tr>
 <tr><th>Gemma 4 E4B</th><td>vulkan</td><td>131,072</td><td>passed</td><td>7.08</td><td>82.25</td><td>173.29</td><td>47.50</td></tr>
 <tr><th>Qwen3.5-9B</th><td>hip</td><td>262,144</td><td>passed</td><td>14.08</td><td>96.50</td><td>1220.29</td><td>12.14</td></tr>
@@ -102,17 +145,16 @@
 <tr><th>Gemma 4 12B</th><td>hip</td><td>262,144</td><td>passed</td><td>15.08</td><td>97.25</td><td>923.41</td><td>15.03</td></tr>
 <tr><th>Gemma 4 12B</th><td>vulkan</td><td>262,144</td><td>not passed</td><td>14.39</td><td>99.25</td><td>—</td><td>—</td></tr>
 </tbody></table></div>
-<p>A capacity pass means the model read a full prompt of repeated text and generated 128 tokens without dropping input. This checks memory and execution, not understanding of long conversations. Images were checked before filling the context.</p>
+<p>Images were checked before the full-text fill and 128-token answer. Long-conversation quality was not tested.</p>
 <ul>
-<li><strong>E4B Q8 at 128K:</strong> Vulkan/Q4 uses less memory and generates faster; HIP/Q4 reads the prompt faster. Both still make image-description mistakes.</li>
-<li><strong>Qwen Q8 at 256K:</strong> use Vulkan/Q4 for faster prompt reading and answers.</li>
-<li><strong>Gemma 12B Q8 at 256K:</strong> use HIP/Q4. Vulkan/Q4 answered image questions but failed near 229K tokens.</li>
+<li><strong>E4B:</strong> Vulkan for faster answers; HIP for faster prompt reading</li>
+<li><strong>Qwen:</strong> Vulkan</li>
+<li><strong>Gemma 12B:</strong> HIP; Vulkan failed near 229K tokens</li>
 </ul>
-<p><strong>Other failures:</strong> Gemma 12B/HIP with Q8 cache ran out of memory on images. Vulkan with Q8 cache failed near 155K tokens for Qwen and 115K for Gemma 12B. Qwen/HIP with Q8 cache passed with only about 12 MiB free; use Q4 cache for more space.</p>
+<p><strong>Q8 cache:</strong> Gemma 12B/HIP ran out of memory on images. Vulkan failed near 155K tokens for Qwen and 115K for Gemma 12B. Qwen/HIP passed with only about 12 MiB free.</p>
 </details>
-<h3>3.3 Scoring and memory readings</h3>
-<p class="small"><strong>Compare in Codex:</strong> select Luna-6 (<code>gpt-6-luna</code>). Hide model names and score saved answers using the same images, reference answers and <a href="../evaluation/README.md#image-description-quality">scoring guide</a>. Identical answers use the same score.</p>
-<p class="small">Weight-comparison memory is a run-end snapshot; MTP and maximum-context memory are sampled peaks. Readings include other GPU use. Model download size differs from memory use.</p>
-<p class="small">Maximum-context tests also used system RAM: E4B 7.69–7.84 GiB, Qwen 9.05–9.17 GiB, Gemma 12B 12.01–12.16 GiB. Allow extra for the operating system and other apps. Detailed RAM readings are in the <a href="report.html">full report</a>.</p>
+<h3>4.3 Scoring and memory readings</h3>
+<p class="small"><strong>Compare in Codex:</strong> select Luna-6 (<code>gpt-6-luna</code>). Hide model names and score saved answers using the same images, reference answers and <a href="../evaluation/README.md#image-description-quality">scoring guide</a>.</p>
+<p class="small">Weight-comparison memory is a run-end reading; other measured figures show the highest recorded usage. Readings include other GPU use.</p>
 <footer class="doc-links"><a href="../README.md">Repository guide</a><a href="../MODELS.md">Model settings</a><a href="../llama.md">Installation / Runme</a><a href="../BENCHMARK.md">Benchmark tables</a><a href="../evaluation/README.md">How tests are scored</a></footer>
 </main></body></html>

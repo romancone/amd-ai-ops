@@ -2,8 +2,11 @@
 llama_evaluation_dir: /var/tmp/llama-evaluation
 llama_evaluation_source: /opt/llama.cpp
 llama_evaluation_models: []
-llama_evaluation_mode: standard  # mtp-slots-cache: 90 matched configurations at 16K/user
-llama_evaluation_capacity: true  # Six single-user f16/MTP-off capacity checks in MTP mode
+llama_evaluation_mode: standard  # mtp-slots-cache: matched MTP configurations at 16K/user
+llama_evaluation_capacity: true  # Default: one-user f16/MTP-off check per model/backend
+llama_evaluation_capacity_only: false  # Skip capability, speed, image-quality and pp/tg runs
+llama_evaluation_capacity_profiles: []  # Explicit model/backend/slots/cache/mtp capacity rows
+llama_evaluation_capacity_refine: true  # false: validate a safe limit instead of the exact maximum
 llama_evaluation_mtp_guard_tokens: 4  # Reserved per user in MTP capacity checks
 llama_evaluation_service: llama.service
 llama_evaluation_port: 8081
@@ -13,4 +16,4 @@ llama_evaluation_context: 16384  # A model entry can override context
 llama_evaluation_caches: [f16, q8_0, q4_0]
 llama_evaluation_full_context: false  # Fill context minus 128 tokens, then generate 128
 llama_evaluation_full_context_timeout: 1800
-llama_evaluation_vram_limit_mib: 16384  # Skip entries whose estimated_vram_mib exceeds this
+llama_evaluation_vram_limit_mib: 16384  # GPU memory budget; exclude estimates above this
