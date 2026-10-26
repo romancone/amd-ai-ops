@@ -11,9 +11,9 @@ Latest tests **2026-10-25** on RX 6900 XT 16 GiB, Core i9-10900KF, Ubuntu 26.04.
 |---|---|
 | Build, sections 1–4 | llama.cpp `1242be66f`; HIP with RDNA2 and Qwen projector FA fixes |
 | Build, sections 5–6 | llama.cpp `d327bf1f0`; same HIP fixes |
-| Context / request slots | Sections 1–4: one user; 16K or native context. Section 5: 16K per user, 1/2/4 users. Section 6: one user, maximum/practical context |
+| Context / request slots | Sections 1–4: one user; 16K or native context. Section 5: 16K per user, 1/2/4 users. Section 6: 1/2/4 users, maximum/practical context per user |
 | Flash Attention | on |
-| Thinking / MTP | Thinking off. MTP off in sections 1–4 and 6; off/on in section 5 |
+| Thinking / MTP | Thinking off. MTP off in sections 1–4; off/on in sections 5–6, at most three draft tokens |
 | Unified KV | Off in sections 1–4; on in sections 5–6 |
 | GPU placement | All target/draft layers and the BF16 projector on GPU |
 | Text benchmark | pp512 and tg128, three repetitions |
@@ -211,20 +211,16 @@ so do not add them together.
 ## 5. MTP and simultaneous users
 
 [Full MTP report and image answers](reports/mtp.html). 90/90 configurations recorded; 90 passed.
-16K per user means 16K/32K/64K total. Cache: f16/f16, q8_0/q8_0 and q4_0/q4_0; FA and unified KV on;
-BF16 projectors; thinking off; at most three draft tokens. Each row has three
-simultaneous timing batches (512 input / 128 output tokens per request) and
-four image answers once each. Servers restart
-between batches. Qwen uses the dedicated MTP-GGUF target in both modes. The timing prompt is a
-fixed inventory/checklist task, not a broad workload sample.
+16K per user means 16K/32K/64K total. These requests do not fill the context.
+Qwen uses the same dedicated MTP-GGUF target in both modes; Gemma uses matching
+Q4 drafts when MTP is on. Each image wave and timing batch starts a fresh server.
+Timing uses one inventory/checklist prompt; shared settings are listed above.
 
-Prompt and generation rates are per-user means from server timings. Total t/s includes prompt time;
-speedup compares paired total t/s. TTFT means time to first token. Image quality
-averages four Luna-6 scores. Small differences do not establish general accuracy.
-Each slot allocates 16,384 tokens; the timing/image requests do not fill it.
-The four-token MTP guard would leave 16,380 usable tokens per slot, but that
-full MTP capacity is not validated here. GPU and process RAM are sampled peaks.
-Ordinary pp512/tg128 stays separate.
+Prompt and generation rates are per-user means. Total t/s includes prompt and
+request time; speedup is MTP-on total t/s divided by MTP-off for the same profile.
+TTFT means time to first token. Image quality averages four Luna-6 scores;
+small differences do not establish general accuracy. GPU and process RAM show
+the highest recorded usage. Full-context results are in section 6.
 
 | Model | Backend | Users | MTP | K/V cache | FA | Prompt t/s/user | Gen t/s/user | Total t/s ± SD | Speedup | TTFT ms | Request s | Draft accept % | Image quality % | Peak GPU GiB | Peak RAM GiB | Status |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -319,9 +315,9 @@ Ordinary pp512/tg128 stays separate.
 | qwen35-MTP-Q4_K_M | vulkan | 4 | on | q4_0/q4_0 | on | 487.52 | 25.46 | 76.98 ± 0.60 | 0.62 | 1445.31 | 6.47 | 51.28 | 87 | 8.64 | 5.64 | passed |
 | qwen35-MTP-Q4_K_M | vulkan | 4 | on | q8_0/q8_0 | on | 319.82 | 25.91 | 76.92 ± 1.34 | 0.63 | 1602.60 | 6.52 | 48.70 | 92.50 | 9.24 | 5.64 | passed |
 
-### Earlier single-user MTP-on results
+### Single-user MTP-on results
 
-Saved f16/f16 checks, outside the approved 90-configuration matrix.
+Six f16/f16 configurations, separate from the 90-profile matrix.
 
 | Model | Backend | Users | MTP | K/V cache | FA | Prompt t/s/user | Gen t/s/user | Total t/s ± SD | Speedup | TTFT ms | Request s | Draft accept % | Image quality % | Peak GPU GiB | Peak RAM GiB | Status |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -348,28 +344,104 @@ These are separate from server MTP timings.
 
 ## 6. Cache capacity
 
-6/6 checks recorded: 5 validated, 1 unresolved. One user, MTP off, f16/f16. Status: finished. Context values are exact tokens.
-Allocated is the KV pool per user; usable is input plus output.
-These six checks use MTP off, so allocated and usable context are equal.
-Input = allocated minus 128; output = 128. No MTP capacity claim is made.
-Memory refers to the largest passing context, or the failed native attempt when no pass exists. Practical GPU free is the
-smallest sampled headroom during the practical full fill and image check;
-it must be at least 512 MiB. Memory is sampled once per second.
-Lower bounds are not proven maxima. Upper bounds may be tested failures or
-conservative memory exclusions. Capacity does not establish long-context image quality.
-KV MiB sums logged GPU KV buffers; recurrent state is separate.
-GTT includes host staging buffers and is not, by itself, proof of GPU memory spill.
-RAM and GPU-accessible host memory (GTT) can overlap; do not add them together.
+18/18 cases have a passing configuration.
 
-Earlier unguarded MTP boundary checks (outside the six checks): gemma-e4b-Q4_0/hip, 1 user, f16, 131,072 tokens: generated 127 of 128 requested; gemma-e4b-Q4_0/hip, 1 user, f16, 126,976 tokens: generated 126 of 128 requested. These are not memory failures or capacity passes.
+Targets per user: 131,072 tokens for E4B; 262,144 for Gemma 12B and Qwen.
+Each case filled every slot and generated 128 tokens simultaneously, with at
+least 512 MiB GPU spare and no dropped input, prompt-cache reuse or context shifting.
+Allocated is reserved KV space; usable includes input and output. MTP reserves
+four tokens per user. These are verified limits, not exact maxima. Images and
+speed were not retested.
 
-qwen35-MTP-Q4_K_M/vulkan: ErrorDeviceLost at 258,048, 262,144 allocated tokens. No full-capacity limit is established; its 16K timing and image tests passed.
+| Model | Backend | Users | Cache K/V | FA | MTP | Allocated/user | Usable/user | Total allocated / usable | GPU spare MiB | Result | Peak GPU / RAM / GTT GiB |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Gemma 12B Q4_0 | HIP | 1 | f16/f16 | on | on | 262,144 | 262,140 | 262,144 / 262,140 | 2200 | Pass | 13.84 / 7.08 / 0.01 |
+| Gemma 12B Q4_0 | VULKAN | 1 | f16/f16 | on | on | 262,144 | 262,140 | 262,144 / 262,140 | 2416 | Pass | 13.63 / 6.93 / 1.28 |
+| Gemma 12B Q4_0 | HIP | 2 | q4_0/q4_0 | on | on | 262,144 | 262,140 | 524,288 / 524,280 | 1377 | Pass | 14.64 / 7.08 / 0.01 |
+| Gemma 12B Q4_0 | VULKAN | 2 | q4_0/q4_0 | on | on | 262,144 | 262,140 | 524,288 / 524,280 | 3352 | Pass | 12.71 / 6.93 / 2.42 |
+| Gemma 12B Q4_0 | HIP | 4 | q4_0/q4_0 | on | on | 131,072 | 131,068 | 524,288 / 524,272 | 1188 | Pass at reduced context | 14.82 / 7.08 / 0.01 |
+| Gemma 12B Q4_0 | VULKAN | 4 | q4_0/q4_0 | on | on | 131,072 | 131,068 | 524,288 / 524,272 | 2069 | Pass at reduced context | 13.96 / 6.93 / 2.44 |
+| Gemma E4B Q4_0 | HIP | 1 | f16/f16 | on | on | 131,072 | 131,068 | 131,072 / 131,068 | 8837 | Pass | 7.35 / 4.57 / 0.01 |
+| Gemma E4B Q4_0 | VULKAN | 1 | f16/f16 | on | on | 131,072 | 131,068 | 131,072 / 131,068 | 8713 | Pass | 7.48 / 4.48 / 0.72 |
+| Gemma E4B Q4_0 | HIP | 2 | f16/f16 | on | off | 131,072 | 131,072 | 262,144 / 262,144 | 6859 | Pass | 9.29 / 3.46 / 0.01 |
+| Gemma E4B Q4_0 | VULKAN | 2 | f16/f16 | on | off | 131,072 | 131,072 | 262,144 / 262,144 | 6225 | Pass | 9.91 / 4.48 / 0.67 |
+| Gemma E4B Q4_0 | HIP | 4 | f16/f16 | on | off | 131,072 | 131,072 | 524,288 / 524,288 | 2145 | Pass | 13.89 / 4.09 / 0.01 |
+| Gemma E4B Q4_0 | VULKAN | 4 | q8_0/q8_0 | on | off | 131,072 | 131,072 | 524,288 / 524,288 | 2424 | Pass (3/3) | 13.62 / 4.48 / 1.24 |
+| Qwen 9B MTP Q4_K_M | HIP | 1 | q4_0/q4_0 | on | on | 262,144 | 262,140 | 262,144 / 262,140 | 2410 | Pass | 13.63 / 5.77 / 0.01 |
+| Qwen 9B MTP Q4_K_M | VULKAN | 1 | f16/f16 | on | on | 131,072 | 131,068 | 131,072 / 131,068 | 2666 | Pass at reduced context | 13.38 / 5.64 / 1.24 |
+| Qwen 9B MTP Q4_K_M | HIP | 2 | q4_0/q4_0 | on | off | 262,144 | 262,144 | 524,288 / 524,288 | 881 | Pass | 15.12 / 5.77 / 0.01 |
+| Qwen 9B MTP Q4_K_M | VULKAN | 2 | q4_0/q4_0 | on | off | 262,144 | 262,144 | 524,288 / 524,288 | 3085 | Pass | 12.97 / 5.64 / 2.14 |
+| Qwen 9B MTP Q4_K_M | HIP | 4 | q4_0/q4_0 | on | off | 131,072 | 131,072 | 524,288 / 524,288 | 777 | Pass at reduced context | 15.23 / 5.77 / 0.01 |
+| Qwen 9B MTP Q4_K_M | VULKAN | 4 | q4_0/q4_0 | on | off | 131,072 | 131,072 | 524,288 / 524,288 | 2984 | Pass at reduced context | 13.07 / 5.64 / 2.14 |
 
-| Model | Backend | FA | Max allocated / usable tokens | KV MiB | Practical allocated / usable tokens | Practical GPU free MiB | Upper test tokens | Full-prompt t/s | Generation t/s | Peak GPU GiB | Peak RAM GiB | Peak GTT GiB | Boundary / status |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| gemma-e4b-Q4_0 | hip | on | 131,072 / 131,072 | 2118.00 | 131,072 / 131,072 | 9186.73 | 131072 | 1088.30 | 51.56 | 7.01 | 4.57 | 0.01 | model limit |
-| gemma-e4b-Q4_0 | vulkan | on | 131,072 / 131,072 | 2118.00 | 131,072 / 131,072 | 9093.97 | 131072 | 564.19 | 49.07 | 7.10 | 4.48 | 0.39 | model limit |
-| gemma12-Q4_0 | hip | on | 262,144 / 262,144 | 4816.00 | 262,144 / 262,144 | 3088.29 | 262144 | 282.41 | 24.14 | 12.97 | 7.08 | 0.01 | model limit |
-| gemma12-Q4_0 | vulkan | on | 262,144 / 262,144 | 4816.00 | 262,144 / 262,144 | 3372.27 | 262144 | 146.58 | 31.18 | 12.69 | 6.93 | 0.65 | model limit |
-| qwen35-MTP-Q4_K_M | hip | on | 262,144 / 262,144 | 8192.00 | 249,856 / 249,856 | 525.65 | 262144 | 205.88 | 29.21 | 15.89 | 5.77 | 0.01 | model limit |
-| qwen35-MTP-Q4_K_M | vulkan | on | — | 8192.00 | — | — | 262144 | — | — | 15.67 | 5.64 | 1.40 | not established: device_lost |
+At four users, Gemma 12B and Qwen passed 131072 tokens per user with Q4 cache; four times 262144 did not pass. E4B keeps four times 131072, using Q8 on Vulkan. These text-capacity settings do not replace the image-quality choices measured at 16K.
+
+### 6.1 Cache failures and calculated exclusions
+
+| Model | Backend | Users | Allocated/user | Cache K/V | MTP | Result |
+| --- | --- | --- | --- | --- | --- | --- |
+| Gemma 12B Q4_0 | HIP | 2 | 262144 | f16/f16 | on | Fail: oom |
+| Gemma 12B Q4_0 | HIP | 2 | 262144 | q8_0/q8_0 | on | Fail: oom |
+| Gemma 12B Q4_0 | VULKAN | 2 | 262144 | f16/f16 | on | Fail: nonresident_vram |
+| Gemma 12B Q4_0 | VULKAN | 2 | 262144 | q8_0/q8_0 | on | Fail: nonresident_vram |
+| Gemma 12B Q4_0 | HIP | 4 | 262144 | f16/f16 | on | Excluded: calculated memory floor |
+| Gemma 12B Q4_0 | HIP | 4 | 262144 | q8_0/q8_0 | on | Fail: oom |
+| Gemma 12B Q4_0 | HIP | 4 | 262144 | q4_0/q4_0 | on | Fail: oom |
+| Gemma 12B Q4_0 | HIP | 4 | 131072 | f16/f16 | on | Fail: oom |
+| Gemma 12B Q4_0 | HIP | 4 | 131072 | q8_0/q8_0 | on | Fail: oom |
+| Gemma 12B Q4_0 | VULKAN | 4 | 262144 | f16/f16 | on | Excluded: calculated memory floor |
+| Gemma 12B Q4_0 | VULKAN | 4 | 262144 | q8_0/q8_0 | on | Fail: nonresident_vram |
+| Gemma 12B Q4_0 | VULKAN | 4 | 262144 | q4_0/q4_0 | on | Fail: nonresident_vram |
+| Gemma 12B Q4_0 | VULKAN | 4 | 131072 | f16/f16 | on | Fail: nonresident_vram |
+| Gemma 12B Q4_0 | VULKAN | 4 | 131072 | q8_0/q8_0 | on | Fail: nonresident_vram |
+| Qwen 9B MTP Q4_K_M | HIP | 1 | 262144 | f16/f16 | on | Fail: oom |
+| Qwen 9B MTP Q4_K_M | HIP | 1 | 262144 | q8_0/q8_0 | on | Fail: 108 MiB GPU spare; 512 required |
+| Qwen 9B MTP Q4_K_M | VULKAN | 1 | 262144 | f16/f16 | on | Fail: nonresident_vram |
+| Qwen 9B MTP Q4_K_M | VULKAN | 1 | 262144 | q8_0/q8_0 | on | Fail: nonresident_vram |
+| Qwen 9B MTP Q4_K_M | VULKAN | 1 | 262144 | q4_0/q4_0 | on | Fail: nonresident_vram |
+| Qwen 9B MTP Q4_K_M | HIP | 2 | 262144 | f16/f16 | off | Excluded: calculated memory floor |
+| Qwen 9B MTP Q4_K_M | HIP | 2 | 262144 | q8_0/q8_0 | off | Fail: oom |
+| Qwen 9B MTP Q4_K_M | VULKAN | 2 | 262144 | f16/f16 | off | Excluded: calculated memory floor |
+| Qwen 9B MTP Q4_K_M | VULKAN | 2 | 262144 | q8_0/q8_0 | off | Fail: 168 MiB GPU spare; 512 required |
+| Qwen 9B MTP Q4_K_M | HIP | 4 | 262144 | f16/f16 | off | Excluded: calculated memory floor |
+| Qwen 9B MTP Q4_K_M | HIP | 4 | 262144 | q8_0/q8_0 | off | Excluded: calculated memory floor |
+| Qwen 9B MTP Q4_K_M | HIP | 4 | 262144 | q4_0/q4_0 | off | Fail: oom |
+| Qwen 9B MTP Q4_K_M | HIP | 4 | 131072 | f16/f16 | off | Excluded: calculated memory floor |
+| Qwen 9B MTP Q4_K_M | HIP | 4 | 131072 | q8_0/q8_0 | off | Fail: oom |
+| Qwen 9B MTP Q4_K_M | VULKAN | 4 | 262144 | f16/f16 | off | Excluded: calculated memory floor |
+| Qwen 9B MTP Q4_K_M | VULKAN | 4 | 262144 | q8_0/q8_0 | off | Excluded: calculated memory floor |
+| Qwen 9B MTP Q4_K_M | VULKAN | 4 | 262144 | q4_0/q4_0 | off | Fail: 485 MiB GPU spare; 512 required |
+| Qwen 9B MTP Q4_K_M | VULKAN | 4 | 131072 | f16/f16 | off | Excluded: calculated memory floor |
+| Qwen 9B MTP Q4_K_M | VULKAN | 4 | 131072 | q8_0/q8_0 | off | Fail: 430 MiB GPU spare; 512 required |
+| Gemma E4B Q4_0 | VULKAN | 4 | 131072 | f16/f16 | off | Fail: VRAM eviction; 412 MiB peak spare |
+
+### 6.2 Other measured contexts
+
+Practical limits leave at least 512 MiB GPU spare. Memory includes image checks where recorded; text capacity does not establish long-context image quality. GPU, process RAM and GTT are separate readings; GTT can overlap RAM.
+
+| Model | Backend | Users | Cache K/V | FA | MTP | Largest resident allocated / usable per user | Largest resident allocated / usable total | Practical allocated / usable per user | Practical allocated / usable total | GPU spare MiB | Largest-pass peak GPU / RAM / GTT GiB | Practical peak GPU / RAM / GTT GiB | Full KV MiB | Full prompt / generation t/s/user | Upper bound per user | Status |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Gemma E4B Q4_0 | HIP | 1 | f16/f16 | on | off | 131,072 / 131,072 | 131,072 / 131,072 | 131,072 / 131,072 | 131,072 / 131,072 | 9187 | 7.01 / 4.57 / 0.01 | same | 2118 | 1088.30 / 51.56 | 131,072 | model limit |
+| Gemma E4B Q4_0 | HIP | 1 | f16/f16 | on | on | 131,072 / 131,068 | 131,072 / 131,068 | 131,072 / 131,068 | 131,072 / 131,068 | 8806 | 7.38 / 4.62 / 0.01 | same | 2118 | 1080.91 / 69.01 | 131,072 | model limit |
+| Gemma E4B Q4_0 | HIP | 2 | f16/f16 | on | off | 131,072 / 131,072 | 262,144 / 262,144 | 131,072 / 131,072 | 262,144 / 262,144 | 6827 | 9.32 / 3.73 / 0.01 | same | 4186 | 759.76 / 16.85 | 131,072 | model limit |
+| Gemma E4B Q4_0 | HIP | 2 | f16/f16 | on | on | 131,072 / 131,068 | 262,144 / 262,136 | 131,072 / 131,068 | 262,144 / 262,136 | 6157 | 9.97 / 4.64 / 0.01 | same | 4186 | 748.79 / 21.40 | 131,072 | model limit |
+| Gemma E4B Q4_0 | HIP | 4 | f16/f16 | on | off | 131,072 / 131,072 | 524,288 / 524,288 | 131,072 / 131,072 | 524,288 / 524,288 | 2113 | 13.92 / 4.64 / 0.01 | same | 8322 | 472.46 / 5.32 | 131,072 | model limit |
+| Gemma E4B Q4_0 | HIP | 4 | f16/f16 | on | on | 131,072 / 131,068 | 524,288 / 524,272 | 131,072 / 131,068 | 524,288 / 524,272 | 857 | 15.15 / 5.53 / 0.01 | same | 8322 | 465.98 / 6.43 | 131,072 | model limit |
+| Gemma E4B Q4_0 | VULKAN | 1 | f16/f16 | on | off | 131,072 / 131,072 | 131,072 / 131,072 | 131,072 / 131,072 | 131,072 / 131,072 | 9094 | 7.10 / 4.48 / 0.39 | same | 2118 | 564.19 / 49.07 | 131,072 | model limit |
+| Gemma E4B Q4_0 | VULKAN | 1 | f16/f16 | on | on | 131,072 / 131,068 | 131,072 / 131,068 | 131,072 / 131,068 | 131,072 / 131,068 | 8713 | 7.48 / 4.48 / 0.73 | same | 2118 | 557.89 / 46.10 | 131,072 | model limit |
+| Gemma E4B Q4_0 | VULKAN | 2 | f16/f16 | on | off | 131,072 / 131,072 | 262,144 / 262,144 | 131,072 / 131,072 | 262,144 / 262,144 | 6225 | 9.91 / 4.48 / 0.68 | same | 4186 | 579.94 / 16.43 | 131,072 | model limit |
+| Gemma E4B Q4_0 | VULKAN | 2 | f16/f16 | on | on | 131,072 / 131,068 | 262,144 / 262,136 | 131,072 / 131,068 | 262,144 / 262,136 | 5327 | 10.78 / 4.48 / 1.30 | same | 4186 | 571.55 / 13.82 | 131,072 | model limit |
+| Gemma E4B Q4_0 | VULKAN | 4 | f16/f16 | on | off | 114,688 / 114,688 | 458,752 / 458,752 | 110,592 / 110,592 | 442,368 / 442,368 | 584 | 15.72 / 4.48 / 1.10 | 15.41 / 4.48 / 1.07 | 7298 | 631.24 / 5.99 | 118,784 (VRAM not resident) | 4K boundary |
+| Gemma E4B Q4_0 | VULKAN | 4 | f16/f16 | on | on | 102,400 / 102,396 | 409,600 / 409,584 | 102,400 / 102,396 | 409,600 / 409,584 | 630 | 15.37 / 4.48 / 3.60 | same | 6530 | 690.70 / 4.65 | 106,496 (VRAM not resident) | 4K boundary |
+| Gemma 12B Q4_0 | HIP | 1 | f16/f16 | on | off | 262,144 / 262,144 | 262,144 / 262,144 | 262,144 / 262,144 | 262,144 / 262,144 | 3088 | 12.97 / 7.08 / 0.01 | same | 4816 | 282.41 / 24.14 | 262,144 | model limit |
+| Gemma 12B Q4_0 | HIP | 1 | f16/f16 | on | on | 262,144 / 262,140 | 262,144 / 262,140 | 262,144 / 262,140 | 262,144 / 262,140 | 2132 | 13.90 / 7.08 / 0.01 | same | 4816 | 280.99 / 29.79 | 262,144 | model limit |
+| Gemma 12B Q4_0 | HIP | 2 | f16/f16 | on | off | 212,992 / 212,992 | 425,984 / 425,984 | 180,224 / 180,224 | 360,448 / 360,448 | 1009 | 15.97 / 7.08 / 0.01 | 15.00 / 7.08 / 0.01 | 7696 | 205.64 / 9.14 | 217,088 (OOM) | safe limit; maximum not searched |
+| Gemma 12B Q4_0 | HIP | 2 | q4_0/q4_0 | on | off | 262,144 / 262,144 | 524,288 / 524,288 | 262,144 / 262,144 | 524,288 / 524,288 | 3827 | 12.25 / 7.08 / 0.01 | same | 2596 | 194.57 / 5.65 | 262,144 | model limit |
+| Gemma 12B Q4_0 | HIP | 2 | f16/f16 | on | on | 151,552 / 151,548 | 303,104 / 303,096 | 151,552 / 151,548 | 303,104 / 303,096 | 983 | 15.02 / 7.08 / 0.01 | same | 5776 | 291.68 / 12.88 | 196,608 (OOM) | safe limit; maximum not searched |
+| Gemma 12B Q4_0 | VULKAN | 1 | f16/f16 | on | off | 262,144 / 262,144 | 262,144 / 262,144 | 262,144 / 262,144 | 262,144 / 262,144 | 3372 | 12.69 / 6.93 / 0.65 | same | 4816 | 146.58 / 31.18 | 262,144 | model limit |
+| Qwen 9B MTP Q4_K_M | HIP | 1 | f16/f16 | on | off | 262,144 / 262,144 | 262,144 / 262,144 | 249,856 / 249,856 | 249,856 / 249,856 | 526 | 15.89 / 5.77 / 0.01 | 15.47 / 5.77 / 0.01 | 8192 | 205.88 / 29.21 | 262,144 | model limit |
+
+| Model | Backend | Users | Cache K/V | FA | MTP | Allocated tokens | KV MiB | Peak GPU / RAM / GTT GiB | Result |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Qwen 9B MTP Q4_K_M | Vulkan | 1 | f16/f16 | on | off | 258,048 | 8064 | 15.60 / 5.64 / 1.45 | ErrorDeviceLost; not an OOM boundary |
+| Qwen 9B MTP Q4_K_M | Vulkan | 1 | f16/f16 | on | off | 262,144 | 8192 | 15.67 / 5.64 / 1.40 | ErrorDeviceLost; not an OOM boundary |

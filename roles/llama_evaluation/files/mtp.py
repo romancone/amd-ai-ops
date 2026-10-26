@@ -7,6 +7,7 @@ from __main__ import (ROOT, M, IMAGES, BASE, save, now, request, MemoryMonitor,
 
 _metadata = {}
 _gpu_budget = 16384
+_active_proc = None
 
 
 def memory_floor(model, slots, cache, context):
@@ -69,9 +70,11 @@ class Trial:
         self.result = {'command': args, 'start_utc': now()}
 
     def __enter__(self):
+        global _active_proc
         self.log = open(self.dest/'server.log', 'w')
         self.proc = sp.Popen(self.result['command'], stdout=self.log, stderr=sp.STDOUT,
                              start_new_session=True)
+        _active_proc = self.proc
         self.result['pid'] = self.proc.pid
         self.monitor = MemoryMonitor(self.proc, self.dest)
         deadline = time.monotonic() + 300
@@ -92,9 +95,14 @@ class Trial:
             raise
 
     def __exit__(self, exc_type, exc, tb):
+        global _active_proc
         if self.monitor:
             self.result['peak_memory_mib'] = self.monitor.finish()
+            if self.monitor.eviction:
+                self.result['vram_eviction'] = self.monitor.eviction
         stop(self.proc)
+        if _active_proc is self.proc:
+            _active_proc = None
         self.log.close()
         log = (self.dest/'server.log').read_text(errors='replace')
         self.result.update(stop_utc=now(), error=str(exc) if exc else None,
@@ -112,7 +120,8 @@ class Trial:
         self.result['projector_gpu'] = bool(re.search(r'CLIP using (ROCm|Vulkan)', log))
         low = log.lower()
         self.result['failure_kind'] = ('oom' if any(s in low for s in
-            ['out of memory', 'failed to allocate', 'out_of_device_memory', 'not enough memory']) else
+            ['out of memory', 'failed to allocate', 'out_of_device_memory', 'not enough memory',
+             'cublas_status_alloc_failed', 'hipblas_status_alloc_failed']) else
             'unsupported' if any(s in low for s in ['not supported', 'unsupported', 'invalid argument',
                                                     'quantized v cache requires flash_attn']) else
             'fa_assertion' if 'GGML_ASSERT(max_blocks_per_sm > 0)' in log else
@@ -231,11 +240,33 @@ def validate_wave(value, count, slots):
     return errors
 
 
-def profile(model, backend, slots, mtp, cache, context, dest, kind, repetition=0, fa='on'):
+def profile(model, backend, slots, mtp, cache, context, dest, kind, repetition=0, fa='on', diagnostics=True):
     dest.mkdir(parents=True, exist_ok=True)
     saved = dest/'result.json'
     if saved.exists():
-        return json.loads(saved.read_text())
+        cached = json.loads(saved.read_text())
+        log = dest/'server.log'
+        if cached['status'] != 'passed' and log.exists() and any(
+                marker in log.read_text(errors='replace').lower() for marker in
+                ('cublas_status_alloc_failed', 'hipblas_status_alloc_failed')):
+            cached['status'] = 'oom'
+            save(dest/'classification-correction.json', {
+                'source_result_sha256': hashlib.sha256(saved.read_bytes()).hexdigest(),
+                'status': 'oom', 'reason': 'BLAS workspace allocation failed'})
+        memory = dest/'memory.jsonl'
+        if kind == 'capacity' and cached['status'] == 'passed' and memory.exists():
+            for line in memory.read_text().splitlines():
+                sample = json.loads(line)
+                missing = sample.get('vram_total_mib', 0)-sample.get('vram_resident_mib', 0)
+                migrated = sample.get('gtt_resident_mib', 0)-sample.get('gtt_total_mib', 0)
+                if min(missing, migrated) > 1:
+                    cached['status'] = 'nonresident_vram'
+                    cached['errors'] = cached.get('errors', [])+['Recorded DRM sample confirms VRAM eviction to GTT']
+                    save(dest/'residency-correction.json', {
+                        'source_result_sha256': hashlib.sha256(saved.read_bytes()).hexdigest(),
+                        'sample': sample, 'status': 'nonresident_vram'})
+                    break
+        return cached
     result = {'model': model['id'], 'backend': backend, 'slots': slots, 'mtp': mtp,
               'cache': cache, 'context_per_user': context, 'context': context*slots,
               'fa': fa, 'kind': kind, 'errors': [], 'start_utc': now()}
@@ -245,13 +276,15 @@ def profile(model, backend, slots, mtp, cache, context, dest, kind, repetition=0
     if kind == 'probe':
         result['memory_floor_mib'] = memory_floor(model, slots, cache, context)
         if result['memory_floor_mib'] > _gpu_budget:
-            result.update(status='estimated_exclusion', errors=['Target weights and full-attention KV alone exceed 16 GiB'])
+            result.update(status='estimated_exclusion', errors=[
+                f'Target weights and full-attention KV alone exceed {_gpu_budget:.0f} MiB GPU memory'])
             save(saved, result)
             return result
     trial = Trial(server_args(model, backend, slots, mtp, cache, context, fa), dest)
     try:
         with trial:
             result['loaded'] = True
+            trial.monitor.abort_on_eviction = kind == 'capacity'
             if kind in ('speed', 'capacity'):
                 count = 512 if kind == 'speed' else context-guard-128
                 result['input_tokens_per_user'] = count
@@ -305,6 +338,8 @@ def profile(model, backend, slots, mtp, cache, context, dest, kind, repetition=0
             result['health_after'] = request('/health', timeout=5)
             if result['health_after'].get('status') != 'ok':
                 result['errors'].append('server unhealthy after workload')
+            if kind == 'capacity':
+                result['drm_memory_after'] = trial.monitor.drm_memory()
     except Exception as exc:
         result['errors'].append(str(exc))
     result['trial'] = trial.result
@@ -317,10 +352,12 @@ def profile(model, backend, slots, mtp, cache, context, dest, kind, repetition=0
         if kind == 'capacity':
             host_compute = max([float(value) for line in trial.result.get('allocations', [])
                                 for value in re.findall(r'\w+_Host\s+compute buffer size\s*=\s*([\d.]+) MiB', line)] or [0])
-            gtt = trial.result.get('peak_memory_mib', {}).get('gtt_mib', 0)
             result['logged_host_compute_mib'] = host_compute
-            if gtt-host_compute > 1024:
-                result['errors'].append('unexplained GTT exceeds logged host compute buffers by 1 GiB: GPU residency not established')
+            residency = result.get('drm_memory_after', {})
+            requested = residency.get('vram_total_mib')
+            resident = residency.get('vram_resident_mib')
+            if requested is not None and resident is not None and requested-resident > 1:
+                result['errors'].append(f'{requested-resident:.2f} MiB requested VRAM is not resident: GPU residency not established')
         if mtp:
             if kind in ('speed', 'capacity', 'probe'):
                 drafted = bool(result.get('wave', {}).get('requests')) and all(
@@ -341,11 +378,14 @@ def profile(model, backend, slots, mtp, cache, context, dest, kind, repetition=0
         if any('incorrect counts/cache' in error for error in result['errors']):
             result['status'] = 'context_limit'
         elif any('GPU residency not established' in error for error in result['errors']):
-            result['status'] = 'host_backed'
+            result['status'] = 'nonresident_vram'
+    if trial.result.get('vram_eviction'):
+        result['errors'].append('VRAM eviction to GTT confirmed; stopped the failed fill early')
+        result['status'] = 'nonresident_vram'
     result['stop_utc'] = now()
     save(saved, result)
     print(f"{dest.relative_to(ROOT)}: {result['status']}", flush=True)
-    if backend == 'hip' and fa == 'on' and result['status'] == 'fa_assertion':
+    if diagnostics and backend == 'hip' and fa == 'on' and result['status'] == 'fa_assertion':
         diagnostic_kind = 'images' if kind == 'images' else 'probe'
         profile(model, backend, slots, mtp, cache, context,
                 dest/'diagnostic-fa-off', diagnostic_kind, repetition, fa='off')
@@ -355,20 +395,202 @@ def profile(model, backend, slots, mtp, cache, context, dest, kind, repetition=0
     return result
 
 
+def capacity_curve(model, selected, dest):
+    """Search one explicit profile; every reported boundary has a full fill."""
+    summary_path = dest/'summary.json'
+    if summary_path.exists():
+        return json.loads(summary_path.read_text())
+    backend, slots, mtp, cache = (selected[k] for k in ('backend', 'slots', 'mtp', 'cache'))
+    refine = M.get('capacity_refine', True)
+    guard = int(M.get('mtp_guard_tokens', 4)) if mtp else 0
+    maximum = int(model['max_context'])
+    ceiling = min(maximum, selected.get('start_context', maximum))
+    upper = min(maximum+4096, selected.get('failing_upper', maximum+4096))
+    passing, candidate, practical = 0, ceiling, None
+    points, last_failure, validated_results = [], [], {}
+    runtime_failure = False
+    # Narrow allocation feasibility with short probes before any expensive fill.
+    probe_low, probe_high = 0, ceiling+4096
+    if selected.get('reused_lower_context'):
+        lower = int(selected['reused_lower_context'])
+        point = dest/f'ctx-{lower}'/f'full-guard-{guard}'
+        if not (point/'result.json').exists():
+            raise ValueError('The reused lower bound must have a saved full-fill result')
+        seed = profile(model, backend, slots, mtp, cache, lower, point, 'capacity')
+        if seed['status'] != 'passed':
+            raise ValueError('The reused lower bound is not a valid full fill')
+        passing = probe_low = lower
+        validated_results[lower] = seed
+        points.append({'context': lower, 'full': 'passed', 'reused': True})
+    if selected.get('start_context') and selected.get('failing_upper'):
+        # Establish a lower full-fill bound before approaching a known device failure.
+        point = dest/f'ctx-{candidate}'
+        seed = profile(model, backend, slots, mtp, cache, candidate, point/'probe', 'probe')
+        points.append({'context': candidate, 'probe': seed['status']})
+        if seed['status'] == 'passed':
+            seed = profile(model, backend, slots, mtp, cache, candidate,
+                           point/f'full-guard-{guard}', 'capacity')
+            points.append({'context': candidate, 'full': seed['status']})
+        if seed['status'] == 'passed':
+            passing = probe_low = candidate
+            validated_results[candidate] = seed
+            ceiling = min(maximum, selected['failing_upper']-4096)
+            probe_high, candidate = ceiling+4096, ceiling
+        elif seed['status'] not in ('oom', 'estimated_exclusion'):
+            upper = min(upper, candidate)
+            last_failure, runtime_failure = seed.get('errors', []), True
+    while candidate >= 4096 and not runtime_failure:
+        probe = profile(model, backend, slots, mtp, cache, candidate,
+                        dest/f'ctx-{candidate}'/'probe', 'probe')
+        points.append({'context': candidate, 'probe': probe['status']})
+        reserve_ok = refine or probe.get('trial', {}).get('peak_memory_mib', {}).get('vram_mib', _gpu_budget) <= _gpu_budget-1024
+        if probe['status'] == 'passed' and reserve_ok:
+            probe_low = candidate
+            if candidate == ceiling or probe_high-probe_low <= 4096:
+                break
+        elif probe['status'] == 'passed':
+            probe_high = candidate
+        elif probe['status'] in ('oom', 'estimated_exclusion'):
+            probe_high = candidate
+            upper = min(upper, candidate)
+            last_failure = probe.get('errors', [])
+        else:
+            upper = min(upper, candidate)
+            last_failure = probe.get('errors', [])
+            runtime_failure = True
+            break
+        candidate = ((probe_low+probe_high)//8192)*4096 if probe_low else (candidate//8192)*4096
+    candidate = probe_low
+    while candidate >= 4096 and not runtime_failure:
+        full = validated_results.get(candidate) or profile(
+            model, backend, slots, mtp, cache, candidate,
+            dest/f'ctx-{candidate}'/f'full-guard-{guard}', 'capacity')
+        points.append({'context': candidate, 'full': full['status']})
+        if full['status'] == 'passed':
+            passing = candidate
+            validated_results[candidate] = full
+            if not refine or candidate == maximum or upper-passing <= 4096:
+                break
+            candidate = ((passing+upper)//8192)*4096
+            continue
+        last_failure = full.get('errors', [])
+        upper = min(upper, candidate)
+        if full['status'] not in ('oom', 'host_backed', 'nonresident_vram'):
+            runtime_failure = True
+            break
+        candidate = ((passing+upper)//8192)*4096 if passing else (candidate//8192)*4096
+    largest = passing or None
+    if not refine:
+        # Keep any larger completed text fill when resuming a partial search.
+        for saved in dest.glob(f'ctx-*/full-guard-{guard}/result.json'):
+            context = int(saved.parents[1].name.removeprefix('ctx-'))
+            if context > (largest or 0) and profile(
+                    model, backend, slots, mtp, cache, context, saved.parent, 'capacity')['status'] == 'passed':
+                largest = context
+                points.append({'context': context, 'full': 'passed', 'reused': True})
+    # Validate image workspace and the 512 MiB operating margin separately.
+    margin_low, margin_high = 0, passing+4096
+    candidate = passing
+    while candidate >= 4096:
+        point = dest/f'ctx-{candidate}'
+        # Reject image-allocation failures before spending time on another fill.
+        image = profile(model, backend, slots, mtp, cache, candidate, point/'image-memory', 'image-memory')
+        points.append({'context': candidate, 'image_memory': image['status']})
+        full = None
+        if image['status'] == 'passed':
+            full = validated_results.get(candidate) or profile(
+                model, backend, slots, mtp, cache, candidate, point/f'full-guard-{guard}', 'capacity')
+        if full is not None and full['status'] == 'passed':
+            peak = max(full['trial']['peak_memory_mib'].get('vram_mib', _gpu_budget),
+                       image['trial']['peak_memory_mib'].get('vram_mib', _gpu_budget))
+            if peak <= _gpu_budget-512:
+                practical = candidate
+                break
+            # Estimate workspace overhead, screen a lower margin candidate, then
+            # validate that candidate with a real simultaneous full fill.
+            reference = profile(model, backend, slots, mtp, cache, candidate, point/'probe', 'probe')
+            probe_peak = reference.get('trial', {}).get('peak_memory_mib', {}).get('vram_mib', peak)
+            overhead = max(0, peak-probe_peak)
+            margin_low, margin_high = 0, candidate
+            while margin_high-margin_low > 4096:
+                c = ((margin_low+margin_high)//8192)*4096
+                probe = profile(model, backend, slots, mtp, cache, c, dest/f'ctx-{c}'/'probe', 'probe')
+                points.append({'context': c, 'margin_probe': probe['status']})
+                if probe['status'] not in ('passed', 'oom', 'estimated_exclusion'):
+                    last_failure = probe.get('errors', [])
+                    runtime_failure = True
+                    break
+                p = probe.get('trial', {}).get('peak_memory_mib', {}).get('vram_mib', _gpu_budget)
+                if probe['status'] == 'passed' and p+overhead <= _gpu_budget-512:
+                    margin_low = c
+                else:
+                    margin_high = c
+            if runtime_failure:
+                break
+            candidate = margin_low
+        else:
+            failed = image if image['status'] != 'passed' else full
+            last_failure = failed.get('errors', [])
+            if failed['status'] not in ('oom', 'host_backed', 'nonresident_vram'):
+                runtime_failure = True
+                break
+            candidate = candidate-4096 if refine else (candidate*3//16384)*4096
+    resolved = not runtime_failure and (largest == maximum or
+        largest is not None and upper-largest <= 4096)
+    result = {'id': dest.name, 'model': model['id'], 'backend': backend, 'slots': slots,
+              'mtp': mtp, 'cache': cache, 'fa': 'on', 'draft_limit': 3 if mtp else 0,
+              'guard_tokens_per_user': guard, 'gpu_budget_mib': _gpu_budget,
+              'largest_passing_per_user': largest, 'practical_per_user': practical,
+              'largest_usable_per_user': largest-guard if largest else None,
+              'largest_usable_total': (largest-guard)*slots if largest else None,
+              'practical_usable_per_user': practical-guard if practical else None,
+              'practical_usable_total': (practical-guard)*slots if practical else None,
+              'upper_bound_per_user': min(maximum, upper),
+              'boundary_resolved': resolved,
+              'search_mode': 'maximum' if refine else 'safe_limit',
+              'points': points, 'last_failure': last_failure,
+              'status': 'passed' if practical and (resolved or not refine) else 'partial' if largest else 'failed'}
+    save(summary_path, result)
+    return result
+
+
 def run():
     global _gpu_budget
+    if M.get('capacity_only') and not M.get('capacity_profiles'):
+        raise ValueError('Capacity-only mode requires explicit capacity_profiles')
+    for selected in M.get('capacity_profiles', []):
+        if (selected['model'] not in [m['id'] for m in M['models']]
+                or selected['backend'] not in M['backends']
+                or selected['slots'] not in [1, 2, 4]
+                or selected['cache'] not in ['f16', 'q8_0', 'q4_0']
+                or not isinstance(selected['mtp'], bool)):
+            raise ValueError(f'Invalid capacity profile: {selected}')
     totals = list(Path('/sys/class/drm').glob('card[0-9]*/device/mem_info_vram_total'))
-    _gpu_budget = min(16384, sum(int(p.read_text()) for p in totals)/2**20)
+    _gpu_budget = min(float(M.get('vram_limit_mib', 16384)),
+                      sum(int(p.read_text()) for p in totals)/2**20)
     def interrupted(*_):
+        # Closing the isolated server also releases pending HTTP worker threads,
+        # allowing the finally block to restore the original service promptly.
+        if _active_proc is not None and _active_proc.poll() is None:
+            _active_proc.kill()
         raise KeyboardInterrupt
     signal.signal(signal.SIGTERM, interrupted)
+    signal.signal(signal.SIGINT, interrupted)
     caches = M.get('caches', ['f16', 'q8_0', 'q4_0'])
+    matrix_models = [] if M.get('capacity_only', False) else M['models']
+    profiles = []
+    if M.get('capacity', True):
+        profiles = M.get('capacity_profiles') or [
+            {'model': model['id'], 'backend': backend, 'slots': 1,
+             'mtp': False, 'cache': 'f16'}
+            for model in sorted(M['models'], key=lambda v: v['max_context'])
+            for backend in sorted(M['backends'])]
     status_file = ROOT/'status-mtp.json'
     previous = json.loads(status_file.read_text()) if status_file.exists() else {}
     state = {'start_utc': previous.get('start_utc', now()), 'pid': __import__('os').getpid(),
              'status': 'running', 'matched': [], 'capacity': [],
-             'matched_total': len(M['models'])*len(M['backends'])*5*len(caches),
-             'capacity_total': len(M['models'])*len(M['backends']) if M.get('capacity', True) else 0}
+             'matched_total': len(matrix_models)*len(M['backends'])*5*len(caches),
+             'capacity_total': len(profiles)}
     active = previous.get('service_was_active',
         sp.run(['systemctl', 'is-active', '--quiet', M['service']]).returncode == 0)
     state['service_was_active'] = active
@@ -385,7 +607,7 @@ def run():
                 if time.monotonic() > deadline:
                     raise TimeoutError(f'{backend} evaluation build not ready')
                 time.sleep(5)
-            for model in M['models']:
+            for model in matrix_models:
                 for slots in [2, 4]:
                     key = f"{model['id']}-{backend}-n{slots}-mtp1"
                     state['current'] = key
@@ -401,7 +623,7 @@ def run():
                                                 'images': image['status'] if image else 'not run'})
                     save(status_file, state)
         state['phase'] = 'matched'
-        for model in M['models']:
+        for model in matrix_models:
             for backend in M['backends']:
                 dest = ROOT/'baseline'/f"{model['id']}-{backend}"
                 dest.mkdir(parents=True, exist_ok=True)
@@ -412,7 +634,7 @@ def run():
                             '-fitc', '16384', '-fitt', '0', '-o', 'json', '-v']
                     save(dest/'result.json', command(args, dest/'bench.json'))
         for slots in [1, 2, 4]:
-            for model in M['models']:
+            for model in matrix_models:
                 for backend in M['backends']:
                     for mtp in ([False] if slots == 1 else [False, True]):
                         for cache in caches:
@@ -451,103 +673,16 @@ def run():
                             save(summary_path, summary)
                             state['matched'].append(summary)
                             save(status_file, state)
-        if M.get('capacity', True):
+        if profiles:
             state['phase'] = 'capacity'
-            save(status_file, state)
-            for model in sorted(M['models'], key=lambda value: value['max_context']):
-                for backend in sorted(M['backends']):
-                    for slots in [1]:
-                        for mtp in [False]:
-                            for cache in ['f16']:
-                                guard = int(M.get('mtp_guard_tokens', 4)) if mtp else 0
-                                full_dir = f'full-guard-{guard}' if guard else 'full'
-                                key = f"{model['id']}-{backend}-n{slots}-mtp{int(mtp)}-{cache}"
-                                state['current'] = key
-                                save(status_file, state)
-                                dest = ROOT/'capacity'/key
-                                if (dest/'summary.json').exists():
-                                    state['capacity'].append(json.loads((dest/'summary.json').read_text()))
-                                    continue
-                                maximum = int(model['max_context'])
-                                low, high, candidate, points = 0, maximum+4096, maximum, []
-                                last_failure = []
-                                while candidate >= 4096:
-                                    probe = profile(model, backend, slots, mtp, cache, candidate,
-                                                    dest/f'ctx-{candidate}'/'probe', 'probe')
-                                    points.append({'context': candidate, 'probe': probe['status']})
-                                    if probe.get('errors'):
-                                        last_failure = probe['errors']
-                                    if probe['status'] == 'passed':
-                                        low = candidate
-                                        if candidate == maximum or high-low <= 4096:
-                                            break
-                                    elif probe['status'] in ('oom', 'estimated_exclusion'):
-                                        high = candidate
-                                    else:
-                                        break
-                                    candidate = ((low+high)//8192)*4096 if low else (candidate//8192)*4096
-                                validated, practical = None, None
-                                while low >= 4096:
-                                    full = profile(model, backend, slots, mtp, cache, low,
-                                                   dest/f'ctx-{low}'/full_dir, 'capacity')
-                                    points.append({'context': low, 'full': full['status']})
-                                    if full.get('errors'):
-                                        last_failure = full['errors']
-                                    if full['status'] == 'passed':
-                                        image = profile(model, backend, slots, mtp, cache, low,
-                                                        dest/f'ctx-{low}'/'image-memory', 'image-memory')
-                                        points.append({'context': low, 'image_memory': image['status']})
-                                        if image.get('errors'):
-                                            last_failure = image['errors']
-                                        if image['status'] == 'passed':
-                                            validated = low if validated is None else validated
-                                            peak = max(full['trial']['peak_memory_mib'].get('vram_mib', 16384),
-                                                       image['trial']['peak_memory_mib'].get('vram_mib', 16384))
-                                            if peak <= _gpu_budget-512:
-                                                practical = low
-                                                break
-                                            # Include the measured full-fill/image workspace missing from a short probe.
-                                            reference_probe = profile(model, backend, slots, mtp, cache, low,
-                                                                      dest/f'ctx-{low}'/'probe', 'probe')
-                                            reference_peak = reference_probe.get('trial', {}).get('peak_memory_mib', {}).get('vram_mib', peak)
-                                            margin_overhead = max(0, peak-reference_peak)
-                                            points.append({'context': low, 'margin_overhead_mib': margin_overhead})
-                                            margin_low, margin_high = 0, low
-                                            while margin_high-margin_low > 4096:
-                                                candidate = ((margin_low+margin_high)//8192)*4096
-                                                probe = profile(model, backend, slots, mtp, cache, candidate,
-                                                                dest/f'ctx-{candidate}'/'probe', 'probe')
-                                                probe_peak = probe.get('trial', {}).get('peak_memory_mib', {}).get('vram_mib', 16384)
-                                                if probe['status'] == 'passed' and probe_peak+margin_overhead <= _gpu_budget-512:
-                                                    margin_low = candidate
-                                                else:
-                                                    margin_high = candidate
-                                            low = margin_low
-                                            continue
-                                        if image['status'] != 'oom':
-                                            break
-                                    if full['status'] not in ('passed', 'oom', 'context_limit', 'host_backed'):
-                                        break
-                                    if validated is None:
-                                        high = min(high, low)
-                                    low -= 4096
-                                summary = {'id': key, 'model': model['id'], 'backend': backend,
-                                    'slots': slots, 'mtp': mtp, 'cache': cache, 'points': points,
-                                    'gpu_budget_mib': _gpu_budget,
-                                    'guard_tokens_per_user': guard, 'full_result_dir': full_dir,
-                                    'largest_passing_per_user': validated, 'practical_per_user': practical,
-                                    'largest_usable_per_user': validated-guard if validated else None,
-                                    'largest_usable_total': (validated-guard)*slots if validated else None,
-                                    'practical_usable_per_user': practical-guard if practical else None,
-                                    'upper_bound_per_user': min(maximum, high),
-                                    'boundary_resolved': validated == maximum or
-                                        (validated is not None and high-validated <= 4096),
-                                    'meets_16k_per_user': validated is not None and validated >= 16384,
-                                    'last_failure': last_failure,
-                                    'status': 'passed' if validated and practical else 'partial' if validated else 'failed'}
-                                save(dest/'summary.json', summary)
-                                state['capacity'].append(summary)
-                                save(status_file, state)
+            for selected in profiles:
+                model = next(v for v in M['models'] if v['id'] == selected['model'])
+                key = f"{model['id']}-{selected['backend']}-n{selected['slots']}-mtp{int(selected['mtp'])}-{selected['cache']}"
+                state['current'] = key
+                save(status_file, state)
+                summary = capacity_curve(model, selected, ROOT/'capacity'/key)
+                state['capacity'].append(summary)
+                save(status_file, state)
         state['status'] = 'finished'
     except BaseException as exc:
         state.update(status='interrupted' if isinstance(exc, KeyboardInterrupt) else 'failed', error=str(exc))

@@ -71,8 +71,33 @@ class MemoryMonitor:
         self.proc, self.dest = proc, dest
         self.done = threading.Event()
         self.peak = {}
+        self.abort_on_eviction = False
+        self.eviction = None
         self.thread = threading.Thread(target=self.sample, daemon=True)
         self.thread.start()
+
+    def drm_memory(self):
+        """Read per-client requested/resident memory without counting duplicate FDs."""
+        clients = {}
+        for path in Path(f'/proc/{self.proc.pid}/fdinfo').glob('*'):
+            try:
+                fields = dict(re.findall(r'^(drm-[\w-]+):\s*([^\n]+)', path.read_text(), re.M))
+            except OSError:
+                continue
+            if 'drm-client-id' not in fields:
+                continue
+            key = fields.get('drm-pdev', ''), fields['drm-client-id']
+            values = {}
+            for region in ['vram', 'gtt']:
+                for kind in ['total', 'resident']:
+                    field = f'drm-{kind}-{region}'
+                    if field in fields:
+                        number, *unit = fields[field].split()
+                        scale = {'KiB': 1/1024, 'MiB': 1}.get(unit[0] if unit else '', 1/2**20)
+                        values[f'{region}_{kind}_mib'] = int(number)*scale
+            clients[key] = values
+        return {key: sum(value.get(key, 0) for value in clients.values())
+                for key in {key for values in clients.values() for key in values}}
 
     def sample(self):
         devices = list(Path('/sys/class/drm').glob('card[0-9]*/device/mem_info_vram_total'))
@@ -88,6 +113,12 @@ class MemoryMonitor:
                     values['rss_mib'] = int(re.search(r'VmRSS:\s+(\d+)', status)[1]) / 1024
                 except (OSError, TypeError):
                     pass
+                values.update(self.drm_memory())
+                missing = values.get('vram_total_mib', 0)-values.get('vram_resident_mib', 0)
+                migrated = values.get('gtt_resident_mib', 0)-values.get('gtt_total_mib', 0)
+                if self.abort_on_eviction and min(missing, migrated) > 1 and self.proc.poll() is None:
+                    self.eviction = dict(values, missing_vram_mib=missing, extra_gtt_mib=migrated)
+                    self.proc.kill()
                 for key, value in values.items():
                     if key != 'utc':
                         self.peak[key] = max(self.peak.get(key, 0), value)

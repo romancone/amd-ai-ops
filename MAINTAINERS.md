@@ -15,7 +15,7 @@ the manual recipes.
 | [README.md](README.md) | Quick starts, compatibility, acceptance criteria and a short changelog |
 | [MODELS.md](MODELS.md) | Model descriptions, file sizes and complete Ansible/Runme profiles for every model, including the current default |
 | [BENCHMARK.md](BENCHMARK.md) | Measured settings, results, comparisons, conclusions and limitations |
-| [reports/](reports/) | `index.html` is the entry point and owns recommendations; `report.html` shows model tests and `mtp.html` shows MTP/users. All three share navigation and `style.css`; no independent configuration guidance |
+| [reports/](reports/) | Hand-maintained `index.html` owns recommendations; generated `report.html` owns model-test details and `mtp.html` owns MTP/users and context-capacity details. All three share navigation and `style.css` |
 | [evaluation/](evaluation/) / [evaluation.yml](evaluation.yml) | Evaluation runner, scoring inputs and report-generation sources; HTML output lives in `reports/`, raw logs stay outside the repository |
 | [cleanup.md](cleanup.md) / [cleanup.yml](cleanup.yml) | Optional ROCm cleanup |
 | [rocm.md](rocm.md) / [site.yml](site.yml) | Generic development tools, then AMD libraries |

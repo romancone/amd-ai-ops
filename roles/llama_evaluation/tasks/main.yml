@@ -4,6 +4,9 @@
     that:
       - llama_evaluation_models | length > 0
       - llama_evaluation_mode in ['standard', 'mtp-slots-cache']
+      - llama_evaluation_capacity_only is boolean
+      - not llama_evaluation_capacity_only or (llama_evaluation_mode == 'mtp-slots-cache' and llama_evaluation_capacity and llama_evaluation_capacity_profiles | length > 0)
+      - llama_evaluation_capacity_refine is boolean
       - llama_evaluation_mtp_guard_tokens | int >= 0
       - llama_evaluation_mtp_guard_tokens | int <= 16
       - llama_evaluation_context | int >= 1024
@@ -23,6 +26,18 @@
       - item.mmproj is search('BF16')
   loop: "{{ llama_evaluation_models }}"
   when: llama_evaluation_mode == 'mtp-slots-cache'
+- name: Validate selected capacity profiles
+  ansible.builtin.assert:
+    that:
+      - item.model in (llama_evaluation_models | map(attribute='id') | list)
+      - item.backend in ['hip', 'vulkan']
+      - item.slots is integer
+      - item.slots in [1, 2, 4]
+      - item.cache in ['f16', 'q8_0', 'q4_0']
+      - item.mtp is boolean
+      - item.start_context | default(4096) is integer
+      - item.start_context | default(4096) >= 4096
+  loop: "{{ llama_evaluation_capacity_profiles }}"
 - name: Prepare the evidence directory
   ansible.builtin.file:
     path: "{{ llama_evaluation_dir }}"

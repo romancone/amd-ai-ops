@@ -83,10 +83,10 @@ Raw benchmark JSON, server logs and image responses stay in the run directory.
 
 ### 1.3 MTP, users and cache capacity
 
-Set `llama_evaluation_mode: mtp-slots-cache` for the approved 1/2/4-user matrix.
+Set `llama_evaluation_mode: mtp-slots-cache` for the 1/2/4-user matrix.
 It fixes 16K **per user**, FA on and unified KV on. It compares f16/f16,
-Q8/Q8 and Q4/Q4 caches: 18 single-user configurations with MTP off, then
-72 configurations for 2/4 users with MTP off/on. Each model
+Q8/Q8 and Q4/Q4 caches. With three models, this gives 18 single-user
+configurations with MTP off and 72 for 2/4 users with MTP off/on. Each model
 needs `max_context`; add `draft` for a separate MTP file. An integrated MTP model
 uses the same target file with MTP off and on. Keep projectors BF16.
 
@@ -95,27 +95,47 @@ batches and four image answers per configuration. Capability results are reused.
 Servers restart between batches. It records simultaneous slot use, latency,
 draft acceptance and memory. Ordinary pp512/tg128 results are saved separately.
 
-With `llama_evaluation_capacity: true`, it runs six capacity checks: one per
-model/backend, one user, MTP off and f16/f16. It starts at the model maximum
-and refines a memory limit in 4K steps. A pass requires every slot to
-process its full input and generate 128 tokens. Results distinguish the largest
-passing context from an operating setting with 512 MiB GPU memory spare.
-These six MTP-off checks use all allocated tokens: input `C - 128`, output 128.
-For a future MTP capacity check, four guard tokens would leave `C - 4` usable
-tokens (input `C - 132`, output 128). Full MTP capacity is not validated here.
-The 16K timing/image matrix uses only part of its allocated context.
-Capacity does not measure long-context image-answer quality.
-The current capacity loop covers one user only. It does not find the maximum
-context for two/four users or MTP on. Extending that coverage requires explicit
-profile selection; do not restart the completed performance/image matrix.
+With `llama_evaluation_capacity: true`, the default is one f16/f16, MTP-off
+capacity check per model/backend, using one slot. To select profiles without
+repeating the speed and quality matrix, use:
+
+```yaml
+llama_evaluation_mode: mtp-slots-cache
+llama_evaluation_capacity_only: true
+llama_evaluation_capacity_refine: false  # Faster: validate a safe limit, not the exact maximum
+llama_evaluation_capacity_profiles:
+  - model: gemma12-Q4_0  # An id in llama_evaluation_models
+    backend: hip
+    slots: 2
+    cache: f16  # Same type for K and V
+    mtp: true  # Requires integrated MTP or a configured draft file
+llama_evaluation_mtp_guard_tokens: 4
+```
+
+Searches start at the model maximum per user unless `start_context` is set.
+Refinement searches in 4K steps; safe-limit mode stops at a verified setting.
+Every slot must process its full input and generate 128 tokens simultaneously,
+without prompt-cache reuse or context shifting. Results distinguish the largest
+passing context from a practical setting with 512 MiB GPU spare.
+
+For allocation `C` per user, input is `C - 128` with MTP off. With the four-token
+MTP reserve, input is `C - 132` and usable context is `C - 4`.
+Total allocation is `C × slots`. An image-memory check also measures workspace,
+including in capacity-only mode; it does not score image quality.
+
+The GPU budget is the smaller of detected memory and
+`llama_evaluation_vram_limit_mib`. Per-process
+[DRM accounting](https://docs.kernel.org/gpu/drm-usage-stats.html#memory) records
+requested and resident VRAM. Confirmed eviction stops a failed fill early;
+GTT alone does not prove a spill. Device errors remain distinct from memory
+limits. Capacity does not measure long-context answer quality.
 
 Saved case results and summaries are reused by path, including failures. Reuse
 only when the model hashes, source revision and settings match. Keep failed
 attempts intact and use a new case directory for an authorized retry.
 
-Use isolated builds for a new source revision and a new run directory. Keep the
-original service build intact. This mode preserves the service file and restores
-its previous running state. Quality scoring remains a separate Luna-6 step.
+Use isolated builds for a new source revision and keep the service build intact.
+Quality scoring remains a separate Luna-6 step.
 
 Ansible starts a background job; launch success is not test completion. Inspect
 `status-mtp.json` in MTP mode (`status.json` otherwise) and each case's
@@ -175,8 +195,7 @@ Use `--additional-run /path/to/native-context-run` to include a new context
 matrix. Memory classes distinguish ≤8 GiB, ≤16 GiB and excluded configurations.
 
 This step runs no GPU inference and makes no Luna-6 calls.
-`reports/index.html` is the handwritten recommendation summary; update it
-separately when conclusions change.
+`reports/index.html` is fully hand-maintained; the generator never writes it.
 
 For an MTP run, save the blind judgements as `reviews-luna.json` keyed by the
 image/prompt/answer hash, then generate its tables and image-answer view:
@@ -186,5 +205,17 @@ python3 evaluation/build_report.py --mtp-run /path/to/run
 ```
 
 This writes `reports/mtp.html` and sections 5–6 of `BENCHMARK.md`.
-The existing single-user results stay intact. Recommendations stay in
-`reports/index.html`; generated pages link there without copying the summary.
+The existing single-user results stay intact.
+
+For a capacity-only completion, keep `manifest.json` and `reuse.json` beside
+the copied `node2/` results. Pass/fail reports can instead use a verified
+`capacity-summary.json` in the run directory. Then run:
+
+```bash
+python3 evaluation/build_report.py --capacity-run /path/to/capacity-completion
+```
+
+This updates capacity sections while preserving speed tables, image answers
+and scores. For context searches, `reuse.json` links completed summaries and the
+manifest lists selected profiles; missing results remain pending. Combine
+`--mtp-run` and `--capacity-run` to rebuild matched and capacity sections together.
