@@ -164,30 +164,52 @@ answers. MTP and simultaneous users are covered in section 5.
 
 ### MTP and cache choices at 16K per user
 
-Image-first candidates have the highest four-image mean in each group.
-The faster alternative shows the speed/quality tradeoff. These are small-sample
-choices, not proof that a cache type improves image quality. Single-user MTP-on
-candidates use the six preserved checks alongside the 90-configuration matrix.
+Image-first choices use four-image means; the faster alternative shows the tradeoff.
+The selected one-user pairs and all 72 two-/four-user profiles use the same
+Luna-6 rubric. Completed scores are reused for identical answers. These scores
+do not establish a general accuracy ranking. The matrix has 90 profiles plus
+eight single-user MTP-on checks.
 All use FA and unified KV on, 16K allocated per user and BF16 projectors.
 
 | Model | Users | Image-first candidate | Quality % | Total t/s | GPU GiB | Faster alternative |
 | --- | --- | --- | --- | --- | --- | --- |
-| Gemma 12B Q4 | 1 | Vulkan; Q8/Q8; MTP off | 97.25 | 41.43 | 7.94 | HIP; f16/f16; MTP on: 70.01 t/s, 92.75%, 9.12 GiB |
-| Gemma 12B Q4 | 2 | HIP; Q4/Q4; MTP on | 99.25 | 88.82 | 8.71 | HIP; f16/f16; MTP on: 92.34 t/s, 97.25%, 9.77 GiB |
-| Gemma 12B Q4 | 4 | HIP; f16/f16; MTP off | 97.50 | 103.73 | 10.53 | HIP; f16/f16; MTP on: 117.42 t/s, 96.75%, 11.05 GiB |
-| Gemma E4B Q4 | 1 | HIP; Q8/Q8; MTP off | 79.25 | 63.96 | 4.87 | Vulkan; f16/f16; MTP on: 107.52 t/s, 77.25%, 4.77 GiB |
-| Gemma E4B Q4 | 2 | Vulkan; f16/f16; MTP on | 78.00 | 123.88 | 5.11 | HIP; f16/f16; MTP on: 144.57 t/s, 76.75%, 5.53 GiB |
-| Gemma E4B Q4 | 4 | HIP; Q4/Q4; MTP on | 79.25 | 164.35 | 5.78 | HIP; f16/f16; MTP off: 194.83 t/s, 74.25%, 5.98 GiB |
-| Qwen MTP Q4_K_M | 1 | Vulkan; f16/f16; MTP on | 97.25 | 67.40 | 7.78 | Same profile |
-| Qwen MTP Q4_K_M | 2 | HIP; f16/f16; MTP off | 97.75 | 87.49 | 8.07 | Vulkan; f16/f16; MTP off: 93.39 t/s, 93.75%, 7.63 GiB |
-| Qwen MTP Q4_K_M | 4 | Vulkan; Q8/Q8; MTP off | 94.75 | 122.50 | 7.93 | Vulkan; f16/f16; MTP off: 132.22 t/s, 94.50%, 8.86 GiB |
+| Gemma 12B Q4 | 1 | Vulkan; Q8/Q8; MTP off | 95.75 | 41.43 | 7.94 | Vulkan; Q8/Q8; MTP on: 71.18 t/s, 94.25%, 8.34 GiB |
+| Gemma 12B Q4 | 2 | HIP; f16/f16; MTP on | 98.00 | 92.34 | 9.77 | Fastest measured profile |
+| Gemma 12B Q4 | 4 | HIP; f16/f16; MTP off | 97.75 | 103.73 | 10.53 | HIP; f16/f16; MTP on: 117.42 t/s, 97.00%, 11.05 GiB |
+| Gemma E4B Q4 | 1 | HIP; Q8/Q8; MTP off | 83.25 | 63.96 | 4.87 | Vulkan; f16/f16; MTP on: 107.52 t/s, 77.00%, 4.77 GiB |
+| Gemma E4B Q4 | 2 | HIP; Q4/Q4; MTP on | 83.25 | 136.22 | 5.23 | Vulkan; f16/f16; MTP off: 142.88 t/s, 82.50%, 4.95 GiB |
+| Gemma E4B Q4 | 4 | Vulkan; f16/f16; MTP on | 83.25 | 134.49 | 5.80 | HIP; Q4/Q4; MTP off: 179.91 t/s, 83.00%, 5.31 GiB |
+| Qwen MTP Q4_K_M | 1 | Vulkan; f16/f16; MTP off | 92.50 | 59.53 | 7.01 | Vulkan; f16/f16; MTP on: 67.40 t/s, 92.00%, 7.78 GiB |
+| Qwen MTP Q4_K_M | 2 | HIP; f16/f16; MTP off | 95.50 | 87.49 | 8.07 | Vulkan; f16/f16; MTP off: 93.39 t/s, 93.75%, 7.63 GiB |
+| Qwen MTP Q4_K_M | 4 | HIP; f16/f16; MTP off | 94.50 | 127.61 | 9.29 | Vulkan; f16/f16; MTP off: 132.22 t/s, 93.75%, 8.86 GiB |
 
-f16/f16 gave the highest total throughput in every model/user group. Smaller
+f16/f16 gave the highest total throughput in eight of nine model/user groups;
+Gemma 12B with one user was fastest on Vulkan with Q8/Q8 and MTP on. Smaller
 caches saved memory but showed no consistent image-quality advantage.
 Gemma 12B and Qwen gave stronger image answers than E4B. Qwen MTP helped one
 user but slowed output at two and four; Gemma 12B/HIP MTP improved total
 throughput by 63%, 29% and 13% at 1/2/4 users with f16/f16. MTP can delay the
 first token; compare TTFT in section 5. Capacity checks are separate in section 6.
+
+### One-user image quality
+
+Luna-6 scored all 40 saved answers together, blind to model and settings, with
+the same rubric. These profiles use Q4 weights, 16K context, FA and unified KV
+on. Identical answers share one judgement wherever reused. Timing and memory
+measurements are unchanged.
+
+| Model / backend | Cache | Image quality: MTP off → MTP on |
+|---|---|---:|
+| Gemma 12B / Vulkan | f16/f16 | 94.75 → 94.50% |
+| Gemma 12B / Vulkan | Q8/Q8 | 95.75 → 94.25% |
+| Gemma E4B / HIP | f16/f16 | 80.00 → 80.00% |
+| Gemma E4B / HIP | Q8/Q8 | 83.25 → 80.50% |
+| Qwen 9B / Vulkan | f16/f16 | 92.50 → 92.00% |
+
+In this matched set, Gemma 12B/Q8, Qwen/f16 and E4B/Q8 have their highest
+image means with MTP off. MTP on is faster. Qwen's 0.50-point difference is
+too small to claim a clear quality advantage. These are four-image scores,
+not overall model accuracy or proof of a general MTP effect.
 
 ## 4. Memory use
 
@@ -222,111 +244,113 @@ TTFT means time to first token. Image quality averages four Luna-6 scores;
 small differences do not establish general accuracy. GPU and process RAM show
 the highest recorded usage. Full-context results are in section 6.
 
-| Model | Backend | Users | MTP | K/V cache | FA | Prompt t/s/user | Gen t/s/user | Total t/s ± SD | Speedup | TTFT ms | Request s | Draft accept % | Image quality % | Peak GPU GiB | Peak RAM GiB | Status |
+| Model | Backend | Users | MTP | K/V cache | FA | Prompt t/s/user | Gen t/s/user | Total t/s ± SD | Speedup | TTFT ms (mean) | Request s | Draft accept % | Image quality % | Peak GPU GiB | Peak RAM GiB | Status |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| gemma-e4b-Q4_0 | hip | 1 | off | f16/f16 | on | 1700.67 | 87.43 | 72.91 ± 0.22 | — | 302.23 | 1.75 | — | 74.75 | 5.06 | 3.71 | passed |
+| gemma-e4b-Q4_0 | hip | 1 | off | f16/f16 | on | 1700.67 | 87.43 | 72.91 ± 0.22 | — | 302.23 | 1.75 | — | 80.00 | 5.06 | 3.71 | passed |
 | gemma-e4b-Q4_0 | hip | 1 | off | q4_0/q4_0 | on | 1828.70 | 76.13 | 65.62 ± 0.16 | — | 281.75 | 1.95 | — | 73.50 | 4.79 | 4.31 | passed |
-| gemma-e4b-Q4_0 | hip | 1 | off | q8_0/q8_0 | on | 1722.05 | 74.72 | 63.96 ± 0.84 | — | 300.80 | 2.00 | — | 79.25 | 4.87 | 4.57 | passed |
-| gemma-e4b-Q4_0 | hip | 2 | off | f16/f16 | on | 1131.81 | 79.99 | 125.24 ± 0.63 | — | 454.79 | 2.04 | — | 74.25 | 5.37 | 4.57 | passed |
-| gemma-e4b-Q4_0 | hip | 2 | off | q4_0/q4_0 | on | 1089.09 | 68.13 | 109.53 ± 0.46 | — | 471.72 | 2.34 | — | 75.50 | 4.96 | 4.64 | passed |
-| gemma-e4b-Q4_0 | hip | 2 | off | q8_0/q8_0 | on | 1448.94 | 70.69 | 113.19 ± 2.54 | — | 459.30 | 2.26 | — | 75.25 | 5.10 | 4.64 | passed |
-| gemma-e4b-Q4_0 | hip | 2 | on | f16/f16 | on | 947.54 | 106.44 | 144.57 ± 2.79 | 1.15 | 543.25 | 1.74 | 41.79 | 76.75 | 5.53 | 4.48 | passed |
-| gemma-e4b-Q4_0 | hip | 2 | on | q4_0/q4_0 | on | 1231.84 | 96.66 | 136.22 ± 6.30 | 1.24 | 529.72 | 1.85 | 46.81 | 77.75 | 5.23 | 4.64 | passed |
-| gemma-e4b-Q4_0 | hip | 2 | on | q8_0/q8_0 | on | 953.16 | 96.01 | 133.22 ± 1.16 | 1.18 | 539.36 | 1.86 | 41.79 | 74.75 | 5.38 | 4.64 | passed |
-| gemma-e4b-Q4_0 | hip | 4 | off | f16/f16 | on | 865.62 | 67.40 | 194.83 ± 1.58 | — | 734.98 | 2.62 | — | 74.25 | 5.98 | 4.64 | passed |
-| gemma-e4b-Q4_0 | hip | 4 | off | q4_0/q4_0 | on | 1033.31 | 60.44 | 179.91 ± 2.50 | — | 726.96 | 2.84 | — | 77.75 | 5.31 | 4.64 | passed |
-| gemma-e4b-Q4_0 | hip | 4 | off | q8_0/q8_0 | on | 836.21 | 61.76 | 180.75 ± 0.90 | — | 766.23 | 2.83 | — | 75 | 5.59 | 4.64 | passed |
-| gemma-e4b-Q4_0 | hip | 4 | on | f16/f16 | on | 1102.56 | 61.18 | 173.35 ± 1.78 | 0.89 | 764.97 | 2.87 | 41.16 | 74.25 | 6.22 | 4.08 | passed |
-| gemma-e4b-Q4_0 | hip | 4 | on | q4_0/q4_0 | on | 700.97 | 61.47 | 164.35 ± 1.85 | 0.91 | 904.52 | 2.98 | 43.94 | 79.25 | 5.78 | 4.64 | passed |
-| gemma-e4b-Q4_0 | hip | 4 | on | q8_0/q8_0 | on | 880.60 | 59.92 | 165.43 ± 1.29 | 0.92 | 854.75 | 2.99 | 43.84 | 74.75 | 6.06 | 4.64 | passed |
-| gemma-e4b-Q4_0 | vulkan | 1 | off | f16/f16 | on | 3049.65 | 96.81 | 86.35 ± 1.00 | — | 169.74 | 1.48 | — | 77.50 | 4.64 | 4.48 | passed |
-| gemma-e4b-Q4_0 | vulkan | 1 | off | q4_0/q4_0 | on | 3106.93 | 90.86 | 81.76 ± 3.03 | — | 166.36 | 1.57 | — | 73 | 4.41 | 4.48 | passed |
-| gemma-e4b-Q4_0 | vulkan | 1 | off | q8_0/q8_0 | on | 3092.23 | 91.02 | 81.90 ± 2.42 | — | 166.91 | 1.56 | — | 78.50 | 4.49 | 4.48 | passed |
-| gemma-e4b-Q4_0 | vulkan | 2 | off | f16/f16 | on | 2164.21 | 84.56 | 142.88 ± 3.20 | — | 283.77 | 1.79 | — | 76.75 | 4.95 | 4.48 | passed |
-| gemma-e4b-Q4_0 | vulkan | 2 | off | q4_0/q4_0 | on | 2067.42 | 79.22 | 134.15 ± 2.56 | — | 299.43 | 1.90 | — | 74.75 | 4.52 | 4.48 | passed |
-| gemma-e4b-Q4_0 | vulkan | 2 | off | q8_0/q8_0 | on | 1644.42 | 75.58 | 128.16 ± 7.40 | — | 313.83 | 2.00 | — | 74.50 | 4.67 | 4.48 | passed |
-| gemma-e4b-Q4_0 | vulkan | 2 | on | f16/f16 | on | 1504.87 | 81.15 | 123.88 ± 2.47 | 0.87 | 406.85 | 1.98 | 38.38 | 78 | 5.11 | 4.48 | passed |
-| gemma-e4b-Q4_0 | vulkan | 2 | on | q4_0/q4_0 | on | 1310.37 | 70.60 | 114.99 ± 3.11 | 0.86 | 392.72 | 2.19 | 45.03 | 72.50 | 4.69 | 4.48 | passed |
-| gemma-e4b-Q4_0 | vulkan | 2 | on | q8_0/q8_0 | on | 1565.40 | 70.04 | 111.73 ± 6.10 | 0.87 | 388.79 | 2.21 | 40.12 | 76.75 | 4.84 | 4.48 | passed |
-| gemma-e4b-Q4_0 | vulkan | 4 | off | f16/f16 | on | 1096.73 | 56.78 | 182.25 ± 12.97 | — | 561.96 | 2.81 | — | 75.25 | 5.56 | 4.48 | passed |
-| gemma-e4b-Q4_0 | vulkan | 4 | off | q4_0/q4_0 | on | 1516.68 | 49.01 | 163.74 ± 5.20 | — | 514.23 | 3.11 | — | 74.25 | 4.75 | 4.48 | passed |
-| gemma-e4b-Q4_0 | vulkan | 4 | off | q8_0/q8_0 | on | 1061.60 | 52.02 | 169.13 ± 7.41 | — | 574.03 | 3.02 | — | 75 | 5.03 | 4.48 | passed |
-| gemma-e4b-Q4_0 | vulkan | 4 | on | f16/f16 | on | 1127.03 | 42.48 | 134.49 ± 1.17 | 0.74 | 629.34 | 3.64 | 42.84 | 77.75 | 5.80 | 4.48 | passed |
-| gemma-e4b-Q4_0 | vulkan | 4 | on | q4_0/q4_0 | on | 698.49 | 37.48 | 117.77 ± 3.95 | 0.72 | 736.00 | 4.14 | 40.74 | 75 | 4.99 | 4.48 | passed |
-| gemma-e4b-Q4_0 | vulkan | 4 | on | q8_0/q8_0 | on | 989.72 | 39.58 | 122.46 ± 8.89 | 0.72 | 711.60 | 3.97 | 43.48 | 77.75 | 5.27 | 4.48 | passed |
-| gemma12-Q4_0 | hip | 1 | off | f16/f16 | on | 1309.79 | 49.09 | 42.93 ± 0.41 | — | 394.33 | 2.98 | — | 92.50 | 8.71 | 7.08 | passed |
-| gemma12-Q4_0 | hip | 1 | off | q4_0/q4_0 | on | 1368.07 | 44.18 | 39.37 ± 0.20 | — | 376.19 | 3.25 | — | 95.25 | 8.03 | 7.08 | passed |
-| gemma12-Q4_0 | hip | 1 | off | q8_0/q8_0 | on | 1313.48 | 42.99 | 38.25 ± 0.04 | — | 391.29 | 3.35 | — | 94.50 | 8.27 | 7.08 | passed |
-| gemma12-Q4_0 | hip | 2 | off | f16/f16 | on | 672.45 | 45.39 | 71.85 ± 0.12 | — | 763.36 | 3.56 | — | 95.75 | 9.33 | 7.08 | passed |
-| gemma12-Q4_0 | hip | 2 | off | q4_0/q4_0 | on | 856.00 | 39.81 | 65.31 ± 0.89 | — | 717.04 | 3.91 | — | 93.75 | 8.24 | 7.08 | passed |
-| gemma12-Q4_0 | hip | 2 | off | q8_0/q8_0 | on | 701.89 | 42.47 | 68.78 ± 0.11 | — | 730.58 | 3.72 | — | 94.50 | 8.62 | 7.08 | passed |
-| gemma12-Q4_0 | hip | 2 | on | f16/f16 | on | 765.45 | 66.02 | 92.34 ± 0.70 | 1.29 | 801.82 | 2.74 | 55.57 | 97.25 | 9.77 | 7.08 | passed |
-| gemma12-Q4_0 | hip | 2 | on | q4_0/q4_0 | on | 764.66 | 62.40 | 88.82 ± 3.79 | 1.36 | 808.71 | 2.86 | 58.11 | 99.25 | 8.71 | 7.08 | passed |
-| gemma12-Q4_0 | hip | 2 | on | q8_0/q8_0 | on | 611.01 | 64.50 | 90.41 ± 1.39 | 1.31 | 840.62 | 2.81 | 56.58 | 93.75 | 9.09 | 7.08 | passed |
-| gemma12-Q4_0 | hip | 4 | off | f16/f16 | on | 317.10 | 38.29 | 103.73 ± 0.30 | — | 1616.46 | 4.93 | — | 97.50 | 10.53 | 7.08 | passed |
-| gemma12-Q4_0 | hip | 4 | off | q4_0/q4_0 | on | 514.23 | 33.03 | 97.44 ± 0.63 | — | 1369.96 | 5.24 | — | 96.50 | 8.64 | 7.08 | passed |
-| gemma12-Q4_0 | hip | 4 | off | q8_0/q8_0 | on | 522.42 | 33.18 | 97.03 ± 0.64 | — | 1407.88 | 5.26 | — | 95.25 | 9.30 | 7.08 | passed |
-| gemma12-Q4_0 | hip | 4 | on | f16/f16 | on | 373.46 | 48.55 | 117.42 ± 2.23 | 1.13 | 1642.73 | 4.27 | 57.52 | 96.75 | 11.05 | 7.08 | passed |
-| gemma12-Q4_0 | hip | 4 | on | q4_0/q4_0 | on | 476.18 | 45.30 | 114.10 ± 2.12 | 1.17 | 1510.72 | 4.39 | 58.70 | 93 | 9.25 | 7.08 | passed |
-| gemma12-Q4_0 | hip | 4 | on | q8_0/q8_0 | on | 466.28 | 45.33 | 113.59 ± 1.70 | 1.17 | 1543.57 | 4.39 | 59.21 | 95.25 | 9.91 | 7.08 | passed |
-| gemma12-Q4_0 | vulkan | 1 | off | f16/f16 | on | 1333.35 | 50.69 | 44.24 ± 0.38 | — | 385.78 | 2.89 | — | 94.50 | 8.38 | 6.93 | passed |
-| gemma12-Q4_0 | vulkan | 1 | off | q4_0/q4_0 | on | 1319.62 | 48.41 | 42.47 ± 1.74 | — | 389.52 | 3.02 | — | 93.75 | 7.69 | 6.93 | passed |
-| gemma12-Q4_0 | vulkan | 1 | off | q8_0/q8_0 | on | 1329.12 | 47.05 | 41.43 ± 0.21 | — | 387.13 | 3.09 | — | 97.25 | 7.94 | 6.93 | passed |
-| gemma12-Q4_0 | vulkan | 2 | off | f16/f16 | on | 699.88 | 45.52 | 72.61 ± 0.58 | — | 733.47 | 3.52 | — | 95.25 | 9.00 | 6.93 | passed |
-| gemma12-Q4_0 | vulkan | 2 | off | q4_0/q4_0 | on | 681.63 | 43.39 | 69.49 ± 0.57 | — | 753.17 | 3.68 | — | 94 | 7.91 | 6.93 | passed |
-| gemma12-Q4_0 | vulkan | 2 | off | q8_0/q8_0 | on | 686.83 | 43.45 | 69.69 ± 0.47 | — | 748.00 | 3.67 | — | 93.50 | 8.30 | 6.93 | passed |
-| gemma12-Q4_0 | vulkan | 2 | on | f16/f16 | on | 624.24 | 55.73 | 81.97 ± 1.06 | 1.13 | 822.73 | 3.10 | 58.12 | 96.50 | 9.44 | 6.93 | passed |
-| gemma12-Q4_0 | vulkan | 2 | on | q4_0/q4_0 | on | 826.10 | 48.29 | 75.20 ± 1.26 | 1.08 | 743.46 | 3.38 | 56.52 | 94.50 | 8.36 | 6.93 | passed |
-| gemma12-Q4_0 | vulkan | 2 | on | q8_0/q8_0 | on | 655.44 | 51.75 | 78.17 ± 2.00 | 1.12 | 782.57 | 3.24 | 60.45 | 94 | 8.74 | 6.93 | passed |
-| gemma12-Q4_0 | vulkan | 4 | off | f16/f16 | on | 548.51 | 30.49 | 92.57 ± 5.91 | — | 1321.70 | 5.53 | — | 93.25 | 10.21 | 6.93 | passed |
-| gemma12-Q4_0 | vulkan | 4 | off | q4_0/q4_0 | on | 557.33 | 27.65 | 86.89 ± 0.84 | — | 1264.23 | 5.88 | — | 92.50 | 8.31 | 6.93 | passed |
-| gemma12-Q4_0 | vulkan | 4 | off | q8_0/q8_0 | on | 650.46 | 27.61 | 87.16 ± 1.52 | — | 1224.99 | 5.86 | — | 93.50 | 8.98 | 6.93 | passed |
-| gemma12-Q4_0 | vulkan | 4 | on | f16/f16 | on | 573.91 | 26.67 | 82.04 ± 0.76 | 0.89 | 1382.90 | 6.18 | 57.44 | 94 | 10.73 | 6.93 | passed |
-| gemma12-Q4_0 | vulkan | 4 | on | q4_0/q4_0 | on | 503.92 | 27.30 | 81.66 ± 1.31 | 0.94 | 1424.70 | 6.12 | 60.01 | 93.50 | 8.83 | 6.93 | passed |
-| gemma12-Q4_0 | vulkan | 4 | on | q8_0/q8_0 | on | 597.52 | 25.92 | 80.97 ± 1.01 | 0.93 | 1295.88 | 6.22 | 56.47 | 93 | 9.50 | 6.93 | passed |
+| gemma-e4b-Q4_0 | hip | 1 | off | q8_0/q8_0 | on | 1722.05 | 74.72 | 63.96 ± 0.84 | — | 300.80 | 2.00 | — | 83.25 | 4.87 | 4.57 | passed |
+| gemma-e4b-Q4_0 | hip | 2 | off | f16/f16 | on | 1131.81 | 79.99 | 125.24 ± 0.63 | — | 454.79 | 2.04 | — | 80.25 | 5.37 | 4.57 | passed |
+| gemma-e4b-Q4_0 | hip | 2 | off | q4_0/q4_0 | on | 1089.09 | 68.13 | 109.53 ± 0.46 | — | 471.72 | 2.34 | — | 83.25 | 4.96 | 4.64 | passed |
+| gemma-e4b-Q4_0 | hip | 2 | off | q8_0/q8_0 | on | 1448.94 | 70.69 | 113.19 ± 2.54 | — | 459.30 | 2.26 | — | 80.75 | 5.10 | 4.64 | passed |
+| gemma-e4b-Q4_0 | hip | 2 | on | f16/f16 | on | 947.54 | 106.44 | 144.57 ± 2.79 | 1.15 | 543.25 | 1.74 | 41.79 | 82.25 | 5.53 | 4.48 | passed |
+| gemma-e4b-Q4_0 | hip | 2 | on | q4_0/q4_0 | on | 1231.84 | 96.66 | 136.22 ± 6.30 | 1.24 | 529.72 | 1.85 | 46.81 | 83.25 | 5.23 | 4.64 | passed |
+| gemma-e4b-Q4_0 | hip | 2 | on | q8_0/q8_0 | on | 953.16 | 96.01 | 133.22 ± 1.16 | 1.18 | 539.36 | 1.86 | 41.79 | 80.50 | 5.38 | 4.64 | passed |
+| gemma-e4b-Q4_0 | hip | 4 | off | f16/f16 | on | 865.62 | 67.40 | 194.83 ± 1.58 | — | 734.98 | 2.62 | — | 80.50 | 5.98 | 4.64 | passed |
+| gemma-e4b-Q4_0 | hip | 4 | off | q4_0/q4_0 | on | 1033.31 | 60.44 | 179.91 ± 2.50 | — | 726.96 | 2.84 | — | 83.00 | 5.31 | 4.64 | passed |
+| gemma-e4b-Q4_0 | hip | 4 | off | q8_0/q8_0 | on | 836.21 | 61.76 | 180.75 ± 0.90 | — | 766.23 | 2.83 | — | 80.50 | 5.59 | 4.64 | passed |
+| gemma-e4b-Q4_0 | hip | 4 | on | f16/f16 | on | 1102.56 | 61.18 | 173.35 ± 1.78 | 0.89 | 764.97 | 2.87 | 41.16 | 80.50 | 6.22 | 4.08 | passed |
+| gemma-e4b-Q4_0 | hip | 4 | on | q4_0/q4_0 | on | 700.97 | 61.47 | 164.35 ± 1.85 | 0.91 | 904.52 | 2.98 | 43.94 | 82.50 | 5.78 | 4.64 | passed |
+| gemma-e4b-Q4_0 | hip | 4 | on | q8_0/q8_0 | on | 880.60 | 59.92 | 165.43 ± 1.29 | 0.92 | 854.75 | 2.99 | 43.84 | 80.50 | 6.06 | 4.64 | passed |
+| gemma-e4b-Q4_0 | vulkan | 1 | off | f16/f16 | on | 3049.65 | 96.81 | 86.35 ± 1.00 | — | 169.74 | 1.48 | — | 77.25 | 4.64 | 4.48 | passed |
+| gemma-e4b-Q4_0 | vulkan | 1 | off | q4_0/q4_0 | on | 3106.93 | 90.86 | 81.76 ± 3.03 | — | 166.36 | 1.57 | — | 73.00 | 4.41 | 4.48 | passed |
+| gemma-e4b-Q4_0 | vulkan | 1 | off | q8_0/q8_0 | on | 3092.23 | 91.02 | 81.90 ± 2.42 | — | 166.91 | 1.56 | — | 78.25 | 4.49 | 4.48 | passed |
+| gemma-e4b-Q4_0 | vulkan | 2 | off | f16/f16 | on | 2164.21 | 84.56 | 142.88 ± 3.20 | — | 283.77 | 1.79 | — | 82.50 | 4.95 | 4.48 | passed |
+| gemma-e4b-Q4_0 | vulkan | 2 | off | q4_0/q4_0 | on | 2067.42 | 79.22 | 134.15 ± 2.56 | — | 299.43 | 1.90 | — | 80.50 | 4.52 | 4.48 | passed |
+| gemma-e4b-Q4_0 | vulkan | 2 | off | q8_0/q8_0 | on | 1644.42 | 75.58 | 128.16 ± 7.40 | — | 313.83 | 2.00 | — | 80.00 | 4.67 | 4.48 | passed |
+| gemma-e4b-Q4_0 | vulkan | 2 | on | f16/f16 | on | 1504.87 | 81.15 | 123.88 ± 2.47 | 0.87 | 406.85 | 1.98 | 38.38 | 83.25 | 5.11 | 4.48 | passed |
+| gemma-e4b-Q4_0 | vulkan | 2 | on | q4_0/q4_0 | on | 1310.37 | 70.60 | 114.99 ± 3.11 | 0.86 | 392.72 | 2.19 | 45.03 | 79.25 | 4.69 | 4.48 | passed |
+| gemma-e4b-Q4_0 | vulkan | 2 | on | q8_0/q8_0 | on | 1565.40 | 70.04 | 111.73 ± 6.10 | 0.87 | 388.79 | 2.21 | 40.12 | 83.25 | 4.84 | 4.48 | passed |
+| gemma-e4b-Q4_0 | vulkan | 4 | off | f16/f16 | on | 1096.73 | 56.78 | 182.25 ± 12.97 | — | 561.96 | 2.81 | — | 80.25 | 5.56 | 4.48 | passed |
+| gemma-e4b-Q4_0 | vulkan | 4 | off | q4_0/q4_0 | on | 1516.68 | 49.01 | 163.74 ± 5.20 | — | 514.23 | 3.11 | — | 79.50 | 4.75 | 4.48 | passed |
+| gemma-e4b-Q4_0 | vulkan | 4 | off | q8_0/q8_0 | on | 1061.60 | 52.02 | 169.13 ± 7.41 | — | 574.03 | 3.02 | — | 80.25 | 5.03 | 4.48 | passed |
+| gemma-e4b-Q4_0 | vulkan | 4 | on | f16/f16 | on | 1127.03 | 42.48 | 134.49 ± 1.17 | 0.74 | 629.34 | 3.64 | 42.84 | 83.25 | 5.80 | 4.48 | passed |
+| gemma-e4b-Q4_0 | vulkan | 4 | on | q4_0/q4_0 | on | 698.49 | 37.48 | 117.77 ± 3.95 | 0.72 | 736.00 | 4.14 | 40.74 | 80.00 | 4.99 | 4.48 | passed |
+| gemma-e4b-Q4_0 | vulkan | 4 | on | q8_0/q8_0 | on | 989.72 | 39.58 | 122.46 ± 8.89 | 0.72 | 711.60 | 3.97 | 43.48 | 83.25 | 5.27 | 4.48 | passed |
+| gemma12-Q4_0 | hip | 1 | off | f16/f16 | on | 1309.79 | 49.09 | 42.93 ± 0.41 | — | 394.33 | 2.98 | — | 92.25 | 8.71 | 7.08 | passed |
+| gemma12-Q4_0 | hip | 1 | off | q4_0/q4_0 | on | 1368.07 | 44.18 | 39.37 ± 0.20 | — | 376.19 | 3.25 | — | 94.75 | 8.03 | 7.08 | passed |
+| gemma12-Q4_0 | hip | 1 | off | q8_0/q8_0 | on | 1313.48 | 42.99 | 38.25 ± 0.04 | — | 391.29 | 3.35 | — | 94.25 | 8.27 | 7.08 | passed |
+| gemma12-Q4_0 | hip | 2 | off | f16/f16 | on | 672.45 | 45.39 | 71.85 ± 0.12 | — | 763.36 | 3.56 | — | 96.50 | 9.33 | 7.08 | passed |
+| gemma12-Q4_0 | hip | 2 | off | q4_0/q4_0 | on | 856.00 | 39.81 | 65.31 ± 0.89 | — | 717.04 | 3.91 | — | 96.50 | 8.24 | 7.08 | passed |
+| gemma12-Q4_0 | hip | 2 | off | q8_0/q8_0 | on | 701.89 | 42.47 | 68.78 ± 0.11 | — | 730.58 | 3.72 | — | 95.25 | 8.62 | 7.08 | passed |
+| gemma12-Q4_0 | hip | 2 | on | f16/f16 | on | 765.45 | 66.02 | 92.34 ± 0.70 | 1.29 | 801.82 | 2.74 | 55.57 | 98.00 | 9.77 | 7.08 | passed |
+| gemma12-Q4_0 | hip | 2 | on | q4_0/q4_0 | on | 764.66 | 62.40 | 88.82 ± 3.79 | 1.36 | 808.71 | 2.86 | 58.11 | 96.75 | 8.71 | 7.08 | passed |
+| gemma12-Q4_0 | hip | 2 | on | q8_0/q8_0 | on | 611.01 | 64.50 | 90.41 ± 1.39 | 1.31 | 840.62 | 2.81 | 56.58 | 96.25 | 9.09 | 7.08 | passed |
+| gemma12-Q4_0 | hip | 4 | off | f16/f16 | on | 317.10 | 38.29 | 103.73 ± 0.30 | — | 1616.46 | 4.93 | — | 97.75 | 10.53 | 7.08 | passed |
+| gemma12-Q4_0 | hip | 4 | off | q4_0/q4_0 | on | 514.23 | 33.03 | 97.44 ± 0.63 | — | 1369.96 | 5.24 | — | 97.25 | 8.64 | 7.08 | passed |
+| gemma12-Q4_0 | hip | 4 | off | q8_0/q8_0 | on | 522.42 | 33.18 | 97.03 ± 0.64 | — | 1407.88 | 5.26 | — | 95.75 | 9.30 | 7.08 | passed |
+| gemma12-Q4_0 | hip | 4 | on | f16/f16 | on | 373.46 | 48.55 | 117.42 ± 2.23 | 1.13 | 1642.73 | 4.27 | 57.52 | 97.00 | 11.05 | 7.08 | passed |
+| gemma12-Q4_0 | hip | 4 | on | q4_0/q4_0 | on | 476.18 | 45.30 | 114.10 ± 2.12 | 1.17 | 1510.72 | 4.39 | 58.70 | 96.25 | 9.25 | 7.08 | passed |
+| gemma12-Q4_0 | hip | 4 | on | q8_0/q8_0 | on | 466.28 | 45.33 | 113.59 ± 1.70 | 1.17 | 1543.57 | 4.39 | 59.21 | 96.00 | 9.91 | 7.08 | passed |
+| gemma12-Q4_0 | vulkan | 1 | off | f16/f16 | on | 1333.35 | 50.69 | 44.24 ± 0.38 | — | 385.78 | 2.89 | — | 94.75 | 8.38 | 6.93 | passed |
+| gemma12-Q4_0 | vulkan | 1 | off | q4_0/q4_0 | on | 1319.62 | 48.41 | 42.47 ± 1.74 | — | 389.52 | 3.02 | — | 93.25 | 7.69 | 6.93 | passed |
+| gemma12-Q4_0 | vulkan | 1 | off | q8_0/q8_0 | on | 1329.12 | 47.05 | 41.43 ± 0.21 | — | 387.13 | 3.09 | — | 95.75 | 7.94 | 6.93 | passed |
+| gemma12-Q4_0 | vulkan | 2 | off | f16/f16 | on | 699.88 | 45.52 | 72.61 ± 0.58 | — | 733.47 | 3.52 | — | 97.25 | 9.00 | 6.93 | passed |
+| gemma12-Q4_0 | vulkan | 2 | off | q4_0/q4_0 | on | 681.63 | 43.39 | 69.49 ± 0.57 | — | 753.17 | 3.68 | — | 95.75 | 7.91 | 6.93 | passed |
+| gemma12-Q4_0 | vulkan | 2 | off | q8_0/q8_0 | on | 686.83 | 43.45 | 69.69 ± 0.47 | — | 748.00 | 3.67 | — | 95.25 | 8.30 | 6.93 | passed |
+| gemma12-Q4_0 | vulkan | 2 | on | f16/f16 | on | 624.24 | 55.73 | 81.97 ± 1.06 | 1.13 | 822.73 | 3.10 | 58.12 | 96.00 | 9.44 | 6.93 | passed |
+| gemma12-Q4_0 | vulkan | 2 | on | q4_0/q4_0 | on | 826.10 | 48.29 | 75.20 ± 1.26 | 1.08 | 743.46 | 3.38 | 56.52 | 96.25 | 8.36 | 6.93 | passed |
+| gemma12-Q4_0 | vulkan | 2 | on | q8_0/q8_0 | on | 655.44 | 51.75 | 78.17 ± 2.00 | 1.12 | 782.57 | 3.24 | 60.45 | 94.75 | 8.74 | 6.93 | passed |
+| gemma12-Q4_0 | vulkan | 4 | off | f16/f16 | on | 548.51 | 30.49 | 92.57 ± 5.91 | — | 1321.70 | 5.53 | — | 95.75 | 10.21 | 6.93 | passed |
+| gemma12-Q4_0 | vulkan | 4 | off | q4_0/q4_0 | on | 557.33 | 27.65 | 86.89 ± 0.84 | — | 1264.23 | 5.88 | — | 95.00 | 8.31 | 6.93 | passed |
+| gemma12-Q4_0 | vulkan | 4 | off | q8_0/q8_0 | on | 650.46 | 27.61 | 87.16 ± 1.52 | — | 1224.99 | 5.86 | — | 95.75 | 8.98 | 6.93 | passed |
+| gemma12-Q4_0 | vulkan | 4 | on | f16/f16 | on | 573.91 | 26.67 | 82.04 ± 0.76 | 0.89 | 1382.90 | 6.18 | 57.44 | 95.50 | 10.73 | 6.93 | passed |
+| gemma12-Q4_0 | vulkan | 4 | on | q4_0/q4_0 | on | 503.92 | 27.30 | 81.66 ± 1.31 | 0.94 | 1424.70 | 6.12 | 60.01 | 95.75 | 8.83 | 6.93 | passed |
+| gemma12-Q4_0 | vulkan | 4 | on | q8_0/q8_0 | on | 597.52 | 25.92 | 80.97 ± 1.01 | 0.93 | 1295.88 | 6.22 | 56.47 | 95.50 | 9.50 | 6.93 | passed |
 | qwen35-MTP-Q4_K_M | hip | 1 | off | f16/f16 | on | 1046.63 | 67.09 | 53.67 ± 0.41 | — | 491.00 | 2.38 | — | 91.25 | 7.46 | 5.77 | passed |
 | qwen35-MTP-Q4_K_M | hip | 1 | off | q4_0/q4_0 | on | 1100.61 | 64.72 | 52.67 ± 0.26 | — | 466.75 | 2.43 | — | 93.50 | 7.10 | 5.77 | passed |
 | qwen35-MTP-Q4_K_M | hip | 1 | off | q8_0/q8_0 | on | 1056.21 | 64.55 | 52.14 ± 0.55 | — | 487.19 | 2.45 | — | 95.50 | 7.22 | 5.77 | passed |
-| qwen35-MTP-Q4_K_M | hip | 2 | off | f16/f16 | on | 845.88 | 58.73 | 87.49 ± 1.04 | — | 752.55 | 2.92 | — | 97.75 | 8.07 | 5.77 | passed |
-| qwen35-MTP-Q4_K_M | hip | 2 | off | q4_0/q4_0 | on | 667.33 | 58.40 | 86.93 ± 0.29 | — | 768.90 | 2.94 | — | 91.75 | 7.35 | 5.77 | passed |
-| qwen35-MTP-Q4_K_M | hip | 2 | off | q8_0/q8_0 | on | 661.51 | 59.14 | 87.52 ± 0.43 | — | 776.37 | 2.92 | — | 95.25 | 7.60 | 5.77 | passed |
-| qwen35-MTP-Q4_K_M | hip | 2 | on | f16/f16 | on | 816.49 | 54.15 | 76.25 ± 2.98 | 0.87 | 948.74 | 3.31 | 52.95 | 94.50 | 9.02 | 5.77 | passed |
-| qwen35-MTP-Q4_K_M | hip | 2 | on | q4_0/q4_0 | on | 681.50 | 57.21 | 78.03 ± 2.73 | 0.90 | 952.88 | 3.20 | 55.32 | 93 | 8.30 | 5.77 | passed |
-| qwen35-MTP-Q4_K_M | hip | 2 | on | q8_0/q8_0 | on | 683.64 | 54.53 | 76.64 ± 2.96 | 0.88 | 945.37 | 3.30 | 52.67 | 91.75 | 8.58 | 5.77 | passed |
-| qwen35-MTP-Q4_K_M | hip | 4 | off | f16/f16 | on | 358.51 | 49.27 | 127.61 ± 0.42 | — | 1431.27 | 4.01 | — | 94.25 | 9.29 | 5.77 | passed |
-| qwen35-MTP-Q4_K_M | hip | 4 | off | q4_0/q4_0 | on | 569.88 | 45.98 | 125.45 ± 0.76 | — | 1284.67 | 4.07 | — | 87.75 | 7.95 | 5.77 | passed |
-| qwen35-MTP-Q4_K_M | hip | 4 | off | q8_0/q8_0 | on | 478.59 | 46.82 | 126.28 ± 0.09 | — | 1328.18 | 4.05 | — | 90.50 | 8.45 | 5.77 | passed |
-| qwen35-MTP-Q4_K_M | hip | 4 | on | f16/f16 | on | 555.36 | 36.95 | 100.18 ± 1.40 | 0.79 | 1507.06 | 4.99 | 51.80 | 87.25 | 10.73 | 5.77 | passed |
-| qwen35-MTP-Q4_K_M | hip | 4 | on | q4_0/q4_0 | on | 372.30 | 39.32 | 100.57 ± 0.70 | 0.80 | 1679.92 | 4.94 | 52.29 | 90.75 | 9.50 | 5.77 | passed |
-| qwen35-MTP-Q4_K_M | hip | 4 | on | q8_0/q8_0 | on | 556.50 | 36.82 | 99.26 ± 0.54 | 0.79 | 1499.87 | 4.99 | 52.55 | 80 | 10.06 | 5.77 | passed |
-| qwen35-MTP-Q4_K_M | vulkan | 1 | off | f16/f16 | on | 1517.51 | 70.19 | 59.53 ± 0.45 | — | 339.32 | 2.15 | — | 94 | 7.01 | 5.64 | passed |
-| qwen35-MTP-Q4_K_M | vulkan | 1 | off | q4_0/q4_0 | on | 1509.28 | 67.16 | 57.30 ± 0.32 | — | 341.08 | 2.23 | — | 91 | 6.65 | 5.64 | passed |
-| qwen35-MTP-Q4_K_M | vulkan | 1 | off | q8_0/q8_0 | on | 1512.96 | 67.65 | 57.68 ± 0.80 | — | 340.30 | 2.22 | — | 93.75 | 6.78 | 5.64 | passed |
+| qwen35-MTP-Q4_K_M | hip | 2 | off | f16/f16 | on | 845.88 | 58.73 | 87.49 ± 1.04 | — | 752.55 | 2.92 | — | 95.50 | 8.07 | 5.77 | passed |
+| qwen35-MTP-Q4_K_M | hip | 2 | off | q4_0/q4_0 | on | 667.33 | 58.40 | 86.93 ± 0.29 | — | 768.90 | 2.94 | — | 94.50 | 7.35 | 5.77 | passed |
+| qwen35-MTP-Q4_K_M | hip | 2 | off | q8_0/q8_0 | on | 661.51 | 59.14 | 87.52 ± 0.43 | — | 776.37 | 2.92 | — | 93.00 | 7.60 | 5.77 | passed |
+| qwen35-MTP-Q4_K_M | hip | 2 | on | f16/f16 | on | 816.49 | 54.15 | 76.25 ± 2.98 | 0.87 | 948.74 | 3.31 | 52.95 | 94.00 | 9.02 | 5.77 | passed |
+| qwen35-MTP-Q4_K_M | hip | 2 | on | q4_0/q4_0 | on | 681.50 | 57.21 | 78.03 ± 2.73 | 0.90 | 952.88 | 3.20 | 55.32 | 95.25 | 8.30 | 5.77 | passed |
+| qwen35-MTP-Q4_K_M | hip | 2 | on | q8_0/q8_0 | on | 683.64 | 54.53 | 76.64 ± 2.96 | 0.88 | 945.37 | 3.30 | 52.67 | 90.75 | 8.58 | 5.77 | passed |
+| qwen35-MTP-Q4_K_M | hip | 4 | off | f16/f16 | on | 358.51 | 49.27 | 127.61 ± 0.42 | — | 1431.27 | 4.01 | — | 94.50 | 9.29 | 5.77 | passed |
+| qwen35-MTP-Q4_K_M | hip | 4 | off | q4_0/q4_0 | on | 569.88 | 45.98 | 125.45 ± 0.76 | — | 1284.67 | 4.07 | — | 94.25 | 7.95 | 5.77 | passed |
+| qwen35-MTP-Q4_K_M | hip | 4 | off | q8_0/q8_0 | on | 478.59 | 46.82 | 126.28 ± 0.09 | — | 1328.18 | 4.05 | — | 93.00 | 8.45 | 5.77 | passed |
+| qwen35-MTP-Q4_K_M | hip | 4 | on | f16/f16 | on | 555.36 | 36.95 | 100.18 ± 1.40 | 0.79 | 1507.06 | 4.99 | 51.80 | 93.25 | 10.73 | 5.77 | passed |
+| qwen35-MTP-Q4_K_M | hip | 4 | on | q4_0/q4_0 | on | 372.30 | 39.32 | 100.57 ± 0.70 | 0.80 | 1679.92 | 4.94 | 52.29 | 93.50 | 9.50 | 5.77 | passed |
+| qwen35-MTP-Q4_K_M | hip | 4 | on | q8_0/q8_0 | on | 556.50 | 36.82 | 99.26 ± 0.54 | 0.79 | 1499.87 | 4.99 | 52.55 | 91.50 | 10.06 | 5.77 | passed |
+| qwen35-MTP-Q4_K_M | vulkan | 1 | off | f16/f16 | on | 1517.51 | 70.19 | 59.53 ± 0.45 | — | 339.32 | 2.15 | — | 92.50 | 7.01 | 5.64 | passed |
+| qwen35-MTP-Q4_K_M | vulkan | 1 | off | q4_0/q4_0 | on | 1509.28 | 67.16 | 57.30 ± 0.32 | — | 341.08 | 2.23 | — | 91.00 | 6.65 | 5.64 | passed |
+| qwen35-MTP-Q4_K_M | vulkan | 1 | off | q8_0/q8_0 | on | 1512.96 | 67.65 | 57.68 ± 0.80 | — | 340.30 | 2.22 | — | 93.25 | 6.78 | 5.64 | passed |
 | qwen35-MTP-Q4_K_M | vulkan | 2 | off | f16/f16 | on | 1019.06 | 59.85 | 93.39 ± 2.09 | — | 605.67 | 2.74 | — | 93.75 | 7.63 | 5.64 | passed |
-| qwen35-MTP-Q4_K_M | vulkan | 2 | off | q4_0/q4_0 | on | 1019.55 | 57.02 | 90.02 ± 1.33 | — | 605.05 | 2.84 | — | 91.75 | 6.90 | 5.64 | passed |
-| qwen35-MTP-Q4_K_M | vulkan | 2 | off | q8_0/q8_0 | on | 1023.11 | 58.24 | 91.64 ± 0.88 | — | 602.00 | 2.79 | — | 93 | 7.16 | 5.64 | passed |
-| qwen35-MTP-Q4_K_M | vulkan | 2 | on | f16/f16 | on | 589.97 | 61.82 | 86.63 ± 7.76 | 0.93 | 869.81 | 2.94 | 49.18 | 94.50 | 8.58 | 5.64 | passed |
-| qwen35-MTP-Q4_K_M | vulkan | 2 | on | q4_0/q4_0 | on | 937.16 | 59.12 | 86.32 ± 2.22 | 0.96 | 758.67 | 2.93 | 51.91 | 93 | 7.75 | 5.64 | passed |
-| qwen35-MTP-Q4_K_M | vulkan | 2 | on | q8_0/q8_0 | on | 620.97 | 64.51 | 90.40 ± 1.50 | 0.99 | 826.34 | 2.80 | 55.83 | 94 | 8.05 | 5.64 | passed |
-| qwen35-MTP-Q4_K_M | vulkan | 4 | off | f16/f16 | on | 514.53 | 48.18 | 132.22 ± 2.77 | — | 1218.83 | 3.87 | — | 94.50 | 8.86 | 5.64 | passed |
-| qwen35-MTP-Q4_K_M | vulkan | 4 | off | q4_0/q4_0 | on | 767.58 | 41.40 | 123.94 ± 4.93 | — | 1016.63 | 4.12 | — | 84.25 | 7.41 | 5.64 | passed |
-| qwen35-MTP-Q4_K_M | vulkan | 4 | off | q8_0/q8_0 | on | 773.79 | 40.50 | 122.50 ± 1.12 | — | 1004.12 | 4.17 | — | 94.75 | 7.93 | 5.64 | passed |
-| qwen35-MTP-Q4_K_M | vulkan | 4 | on | f16/f16 | on | 491.27 | 27.02 | 81.65 ± 4.18 | 0.62 | 1463.91 | 6.21 | 51.63 | 93 | 10.27 | 5.64 | passed |
-| qwen35-MTP-Q4_K_M | vulkan | 4 | on | q4_0/q4_0 | on | 487.52 | 25.46 | 76.98 ± 0.60 | 0.62 | 1445.31 | 6.47 | 51.28 | 87 | 8.64 | 5.64 | passed |
-| qwen35-MTP-Q4_K_M | vulkan | 4 | on | q8_0/q8_0 | on | 319.82 | 25.91 | 76.92 ± 1.34 | 0.63 | 1602.60 | 6.52 | 48.70 | 92.50 | 9.24 | 5.64 | passed |
+| qwen35-MTP-Q4_K_M | vulkan | 2 | off | q4_0/q4_0 | on | 1019.55 | 57.02 | 90.02 ± 1.33 | — | 605.05 | 2.84 | — | 92.75 | 6.90 | 5.64 | passed |
+| qwen35-MTP-Q4_K_M | vulkan | 2 | off | q8_0/q8_0 | on | 1023.11 | 58.24 | 91.64 ± 0.88 | — | 602.00 | 2.79 | — | 93.25 | 7.16 | 5.64 | passed |
+| qwen35-MTP-Q4_K_M | vulkan | 2 | on | f16/f16 | on | 589.97 | 61.82 | 86.63 ± 7.76 | 0.93 | 869.81 | 2.94 | 49.18 | 92.50 | 8.58 | 5.64 | passed |
+| qwen35-MTP-Q4_K_M | vulkan | 2 | on | q4_0/q4_0 | on | 937.16 | 59.12 | 86.32 ± 2.22 | 0.96 | 758.67 | 2.93 | 51.91 | 94.75 | 7.75 | 5.64 | passed |
+| qwen35-MTP-Q4_K_M | vulkan | 2 | on | q8_0/q8_0 | on | 620.97 | 64.51 | 90.40 ± 1.50 | 0.99 | 826.34 | 2.80 | 55.83 | 92.75 | 8.05 | 5.64 | passed |
+| qwen35-MTP-Q4_K_M | vulkan | 4 | off | f16/f16 | on | 514.53 | 48.18 | 132.22 ± 2.77 | — | 1218.83 | 3.87 | — | 93.75 | 8.86 | 5.64 | passed |
+| qwen35-MTP-Q4_K_M | vulkan | 4 | off | q4_0/q4_0 | on | 767.58 | 41.40 | 123.94 ± 4.93 | — | 1016.63 | 4.12 | — | 89.75 | 7.41 | 5.64 | passed |
+| qwen35-MTP-Q4_K_M | vulkan | 4 | off | q8_0/q8_0 | on | 773.79 | 40.50 | 122.50 ± 1.12 | — | 1004.12 | 4.17 | — | 93.00 | 7.93 | 5.64 | passed |
+| qwen35-MTP-Q4_K_M | vulkan | 4 | on | f16/f16 | on | 491.27 | 27.02 | 81.65 ± 4.18 | 0.62 | 1463.91 | 6.21 | 51.63 | 94.50 | 10.27 | 5.64 | passed |
+| qwen35-MTP-Q4_K_M | vulkan | 4 | on | q4_0/q4_0 | on | 487.52 | 25.46 | 76.98 ± 0.60 | 0.62 | 1445.31 | 6.47 | 51.28 | 93.00 | 8.64 | 5.64 | passed |
+| qwen35-MTP-Q4_K_M | vulkan | 4 | on | q8_0/q8_0 | on | 319.82 | 25.91 | 76.92 ± 1.34 | 0.63 | 1602.60 | 6.52 | 48.70 | 93.00 | 9.24 | 5.64 | passed |
 
 ### Single-user MTP-on results
 
-Six f16/f16 configurations, separate from the 90-profile matrix.
+Eight configurations, separate from the 90-profile matrix.
 
-| Model | Backend | Users | MTP | K/V cache | FA | Prompt t/s/user | Gen t/s/user | Total t/s ± SD | Speedup | TTFT ms | Request s | Draft accept % | Image quality % | Peak GPU GiB | Peak RAM GiB | Status |
+| Model | Backend | Users | MTP | K/V cache | FA | Prompt t/s/user | Gen t/s/user | Total t/s ± SD | Speedup | TTFT ms (mean) | Request s | Draft accept % | Image quality % | Peak GPU GiB | Peak RAM GiB | Status |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| gemma-e4b-Q4_0 | hip | 1 | on | f16/f16 | on | 1330.51 | 138.53 | 98.12 ± 3.99 | 1.35 | 388.32 | 1.31 | 39.66 | 74.75 | 5.19 | 3.70 | passed |
-| gemma-e4b-Q4_0 | vulkan | 1 | on | f16/f16 | on | 1819.25 | 140.46 | 107.52 ± 1.43 | 1.25 | 285.32 | 1.19 | 36.46 | 77.25 | 4.77 | 4.48 | passed |
-| gemma12-Q4_0 | hip | 1 | on | f16/f16 | on | 1094.98 | 93.65 | 70.01 ± 2.46 | 1.63 | 472.56 | 1.83 | 54.17 | 92.75 | 9.12 | 7.09 | passed |
-| gemma12-Q4_0 | vulkan | 1 | on | f16/f16 | on | 1071.32 | 88.59 | 66.74 ± 2.34 | 1.51 | 483.21 | 1.92 | 54.86 | 93 | 8.78 | 6.93 | passed |
+| gemma-e4b-Q4_0 | hip | 1 | on | f16/f16 | on | 1330.51 | 138.53 | 98.12 ± 3.99 | 1.35 | 388.32 | 1.31 | 39.66 | 80.00 | 5.19 | 3.70 | passed |
+| gemma-e4b-Q4_0 | hip | 1 | on | q8_0/q8_0 | on | 1497.19 | 124.14 | 93.61 ± 3.32 | 1.46 | 344.40 | 1.37 | 41.42 | 80.50 | 5.05 | 4.64 | passed |
+| gemma-e4b-Q4_0 | vulkan | 1 | on | f16/f16 | on | 1819.25 | 140.46 | 107.52 ± 1.43 | 1.25 | 285.32 | 1.19 | 36.46 | 77.00 | 4.77 | 4.48 | passed |
+| gemma12-Q4_0 | hip | 1 | on | f16/f16 | on | 1094.98 | 93.65 | 70.01 ± 2.46 | 1.63 | 472.56 | 1.83 | 54.17 | 91.50 | 9.12 | 7.09 | passed |
+| gemma12-Q4_0 | vulkan | 1 | on | f16/f16 | on | 1071.32 | 88.59 | 66.74 ± 2.34 | 1.51 | 483.21 | 1.92 | 54.86 | 94.50 | 8.78 | 6.93 | passed |
+| gemma12-Q4_0 | vulkan | 1 | on | q8_0/q8_0 | on | 1210.40 | 92.62 | 71.18 ± 1.03 | 1.72 | 424.62 | 1.80 | 56.74 | 94.25 | 8.34 | 6.93 | passed |
 | qwen35-MTP-Q4_K_M | hip | 1 | on | f16/f16 | on | 756.60 | 97.47 | 64.60 ± 0.74 | 1.20 | 677.83 | 1.98 | 59.12 | 91.25 | 8.23 | 5.77 | passed |
-| qwen35-MTP-Q4_K_M | vulkan | 1 | on | f16/f16 | on | 922.89 | 94.76 | 67.40 ± 0.62 | 1.13 | 557.45 | 1.90 | 53.79 | 97.25 | 7.78 | 5.64 | passed |
+| qwen35-MTP-Q4_K_M | vulkan | 1 | on | f16/f16 | on | 922.89 | 94.76 | 67.40 ± 0.62 | 1.13 | 557.45 | 1.90 | 53.79 | 92.00 | 7.78 | 5.64 | passed |
 
 ### Ordinary llama-bench at 16K
 
@@ -344,14 +368,15 @@ These are separate from server MTP timings.
 
 ## 6. Cache capacity
 
+Cached-text short checks passed for all three models with MTP off and on. The 128K TTFT/TG measurements remain pending.
+
 18/18 cases have a passing configuration.
 
 Targets per user: 131,072 tokens for E4B; 262,144 for Gemma 12B and Qwen.
 Each case filled every slot and generated 128 tokens simultaneously, with at
 least 512 MiB GPU spare and no dropped input, prompt-cache reuse or context shifting.
 Allocated is reserved KV space; usable includes input and output. MTP reserves
-four tokens per user. These are verified limits, not exact maxima. Images and
-speed were not retested.
+four tokens per user. These are verified limits, not exact maxima. Image quality was not retested.
 
 | Model | Backend | Users | Cache K/V | FA | MTP | Allocated/user | Usable/user | Total allocated / usable | GPU spare MiB | Result | Peak GPU / RAM / GTT GiB |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -419,27 +444,27 @@ At four users, Gemma 12B and Qwen passed 131072 tokens per user with Q4 cache; f
 
 Practical limits leave at least 512 MiB GPU spare. Memory includes image checks where recorded; text capacity does not establish long-context image quality. GPU, process RAM and GTT are separate readings; GTT can overlap RAM.
 
-| Model | Backend | Users | Cache K/V | FA | MTP | Largest resident allocated / usable per user | Largest resident allocated / usable total | Practical allocated / usable per user | Practical allocated / usable total | GPU spare MiB | Largest-pass peak GPU / RAM / GTT GiB | Practical peak GPU / RAM / GTT GiB | Full KV MiB | Full prompt / generation t/s/user | Upper bound per user | Status |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Gemma E4B Q4_0 | HIP | 1 | f16/f16 | on | off | 131,072 / 131,072 | 131,072 / 131,072 | 131,072 / 131,072 | 131,072 / 131,072 | 9187 | 7.01 / 4.57 / 0.01 | same | 2118 | 1088.30 / 51.56 | 131,072 | model limit |
-| Gemma E4B Q4_0 | HIP | 1 | f16/f16 | on | on | 131,072 / 131,068 | 131,072 / 131,068 | 131,072 / 131,068 | 131,072 / 131,068 | 8806 | 7.38 / 4.62 / 0.01 | same | 2118 | 1080.91 / 69.01 | 131,072 | model limit |
-| Gemma E4B Q4_0 | HIP | 2 | f16/f16 | on | off | 131,072 / 131,072 | 262,144 / 262,144 | 131,072 / 131,072 | 262,144 / 262,144 | 6827 | 9.32 / 3.73 / 0.01 | same | 4186 | 759.76 / 16.85 | 131,072 | model limit |
-| Gemma E4B Q4_0 | HIP | 2 | f16/f16 | on | on | 131,072 / 131,068 | 262,144 / 262,136 | 131,072 / 131,068 | 262,144 / 262,136 | 6157 | 9.97 / 4.64 / 0.01 | same | 4186 | 748.79 / 21.40 | 131,072 | model limit |
-| Gemma E4B Q4_0 | HIP | 4 | f16/f16 | on | off | 131,072 / 131,072 | 524,288 / 524,288 | 131,072 / 131,072 | 524,288 / 524,288 | 2113 | 13.92 / 4.64 / 0.01 | same | 8322 | 472.46 / 5.32 | 131,072 | model limit |
-| Gemma E4B Q4_0 | HIP | 4 | f16/f16 | on | on | 131,072 / 131,068 | 524,288 / 524,272 | 131,072 / 131,068 | 524,288 / 524,272 | 857 | 15.15 / 5.53 / 0.01 | same | 8322 | 465.98 / 6.43 | 131,072 | model limit |
-| Gemma E4B Q4_0 | VULKAN | 1 | f16/f16 | on | off | 131,072 / 131,072 | 131,072 / 131,072 | 131,072 / 131,072 | 131,072 / 131,072 | 9094 | 7.10 / 4.48 / 0.39 | same | 2118 | 564.19 / 49.07 | 131,072 | model limit |
-| Gemma E4B Q4_0 | VULKAN | 1 | f16/f16 | on | on | 131,072 / 131,068 | 131,072 / 131,068 | 131,072 / 131,068 | 131,072 / 131,068 | 8713 | 7.48 / 4.48 / 0.73 | same | 2118 | 557.89 / 46.10 | 131,072 | model limit |
-| Gemma E4B Q4_0 | VULKAN | 2 | f16/f16 | on | off | 131,072 / 131,072 | 262,144 / 262,144 | 131,072 / 131,072 | 262,144 / 262,144 | 6225 | 9.91 / 4.48 / 0.68 | same | 4186 | 579.94 / 16.43 | 131,072 | model limit |
-| Gemma E4B Q4_0 | VULKAN | 2 | f16/f16 | on | on | 131,072 / 131,068 | 262,144 / 262,136 | 131,072 / 131,068 | 262,144 / 262,136 | 5327 | 10.78 / 4.48 / 1.30 | same | 4186 | 571.55 / 13.82 | 131,072 | model limit |
-| Gemma E4B Q4_0 | VULKAN | 4 | f16/f16 | on | off | 114,688 / 114,688 | 458,752 / 458,752 | 110,592 / 110,592 | 442,368 / 442,368 | 584 | 15.72 / 4.48 / 1.10 | 15.41 / 4.48 / 1.07 | 7298 | 631.24 / 5.99 | 118,784 (VRAM not resident) | 4K boundary |
-| Gemma E4B Q4_0 | VULKAN | 4 | f16/f16 | on | on | 102,400 / 102,396 | 409,600 / 409,584 | 102,400 / 102,396 | 409,600 / 409,584 | 630 | 15.37 / 4.48 / 3.60 | same | 6530 | 690.70 / 4.65 | 106,496 (VRAM not resident) | 4K boundary |
-| Gemma 12B Q4_0 | HIP | 1 | f16/f16 | on | off | 262,144 / 262,144 | 262,144 / 262,144 | 262,144 / 262,144 | 262,144 / 262,144 | 3088 | 12.97 / 7.08 / 0.01 | same | 4816 | 282.41 / 24.14 | 262,144 | model limit |
-| Gemma 12B Q4_0 | HIP | 1 | f16/f16 | on | on | 262,144 / 262,140 | 262,144 / 262,140 | 262,144 / 262,140 | 262,144 / 262,140 | 2132 | 13.90 / 7.08 / 0.01 | same | 4816 | 280.99 / 29.79 | 262,144 | model limit |
-| Gemma 12B Q4_0 | HIP | 2 | f16/f16 | on | off | 212,992 / 212,992 | 425,984 / 425,984 | 180,224 / 180,224 | 360,448 / 360,448 | 1009 | 15.97 / 7.08 / 0.01 | 15.00 / 7.08 / 0.01 | 7696 | 205.64 / 9.14 | 217,088 (OOM) | safe limit; maximum not searched |
-| Gemma 12B Q4_0 | HIP | 2 | q4_0/q4_0 | on | off | 262,144 / 262,144 | 524,288 / 524,288 | 262,144 / 262,144 | 524,288 / 524,288 | 3827 | 12.25 / 7.08 / 0.01 | same | 2596 | 194.57 / 5.65 | 262,144 | model limit |
-| Gemma 12B Q4_0 | HIP | 2 | f16/f16 | on | on | 151,552 / 151,548 | 303,104 / 303,096 | 151,552 / 151,548 | 303,104 / 303,096 | 983 | 15.02 / 7.08 / 0.01 | same | 5776 | 291.68 / 12.88 | 196,608 (OOM) | safe limit; maximum not searched |
-| Gemma 12B Q4_0 | VULKAN | 1 | f16/f16 | on | off | 262,144 / 262,144 | 262,144 / 262,144 | 262,144 / 262,144 | 262,144 / 262,144 | 3372 | 12.69 / 6.93 / 0.65 | same | 4816 | 146.58 / 31.18 | 262,144 | model limit |
-| Qwen 9B MTP Q4_K_M | HIP | 1 | f16/f16 | on | off | 262,144 / 262,144 | 262,144 / 262,144 | 249,856 / 249,856 | 249,856 / 249,856 | 526 | 15.89 / 5.77 / 0.01 | 15.47 / 5.77 / 0.01 | 8192 | 205.88 / 29.21 | 262,144 | model limit |
+| Model | Backend | Users | Cache K/V | FA | MTP | Largest resident allocated / usable per user | Largest resident allocated / usable total | Practical allocated / usable per user | Practical allocated / usable total | GPU spare MiB | Largest-pass peak GPU / RAM / GTT GiB | Practical peak GPU / RAM / GTT GiB | Full KV MiB | Upper bound per user | Status |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Gemma E4B Q4_0 | HIP | 1 | f16/f16 | on | off | 131,072 / 131,072 | 131,072 / 131,072 | 131,072 / 131,072 | 131,072 / 131,072 | 9187 | 7.01 / 4.57 / 0.01 | same | 2118 | 131,072 | model limit |
+| Gemma E4B Q4_0 | HIP | 1 | f16/f16 | on | on | 131,072 / 131,068 | 131,072 / 131,068 | 131,072 / 131,068 | 131,072 / 131,068 | 8806 | 7.38 / 4.62 / 0.01 | same | 2118 | 131,072 | model limit |
+| Gemma E4B Q4_0 | HIP | 2 | f16/f16 | on | off | 131,072 / 131,072 | 262,144 / 262,144 | 131,072 / 131,072 | 262,144 / 262,144 | 6827 | 9.32 / 3.73 / 0.01 | same | 4186 | 131,072 | model limit |
+| Gemma E4B Q4_0 | HIP | 2 | f16/f16 | on | on | 131,072 / 131,068 | 262,144 / 262,136 | 131,072 / 131,068 | 262,144 / 262,136 | 6157 | 9.97 / 4.64 / 0.01 | same | 4186 | 131,072 | model limit |
+| Gemma E4B Q4_0 | HIP | 4 | f16/f16 | on | off | 131,072 / 131,072 | 524,288 / 524,288 | 131,072 / 131,072 | 524,288 / 524,288 | 2113 | 13.92 / 4.64 / 0.01 | same | 8322 | 131,072 | model limit |
+| Gemma E4B Q4_0 | HIP | 4 | f16/f16 | on | on | 131,072 / 131,068 | 524,288 / 524,272 | 131,072 / 131,068 | 524,288 / 524,272 | 857 | 15.15 / 5.53 / 0.01 | same | 8322 | 131,072 | model limit |
+| Gemma E4B Q4_0 | VULKAN | 1 | f16/f16 | on | off | 131,072 / 131,072 | 131,072 / 131,072 | 131,072 / 131,072 | 131,072 / 131,072 | 9094 | 7.10 / 4.48 / 0.39 | same | 2118 | 131,072 | model limit |
+| Gemma E4B Q4_0 | VULKAN | 1 | f16/f16 | on | on | 131,072 / 131,068 | 131,072 / 131,068 | 131,072 / 131,068 | 131,072 / 131,068 | 8713 | 7.48 / 4.48 / 0.73 | same | 2118 | 131,072 | model limit |
+| Gemma E4B Q4_0 | VULKAN | 2 | f16/f16 | on | off | 131,072 / 131,072 | 262,144 / 262,144 | 131,072 / 131,072 | 262,144 / 262,144 | 6225 | 9.91 / 4.48 / 0.68 | same | 4186 | 131,072 | model limit |
+| Gemma E4B Q4_0 | VULKAN | 2 | f16/f16 | on | on | 131,072 / 131,068 | 262,144 / 262,136 | 131,072 / 131,068 | 262,144 / 262,136 | 5327 | 10.78 / 4.48 / 1.30 | same | 4186 | 131,072 | model limit |
+| Gemma E4B Q4_0 | VULKAN | 4 | f16/f16 | on | off | 114,688 / 114,688 | 458,752 / 458,752 | 110,592 / 110,592 | 442,368 / 442,368 | 584 | 15.72 / 4.48 / 1.10 | 15.41 / 4.48 / 1.07 | 7298 | 118,784 (VRAM not resident) | 4K boundary |
+| Gemma E4B Q4_0 | VULKAN | 4 | f16/f16 | on | on | 102,400 / 102,396 | 409,600 / 409,584 | 102,400 / 102,396 | 409,600 / 409,584 | 630 | 15.37 / 4.48 / 3.60 | same | 6530 | 106,496 (VRAM not resident) | 4K boundary |
+| Gemma 12B Q4_0 | HIP | 1 | f16/f16 | on | off | 262,144 / 262,144 | 262,144 / 262,144 | 262,144 / 262,144 | 262,144 / 262,144 | 3088 | 12.97 / 7.08 / 0.01 | same | 4816 | 262,144 | model limit |
+| Gemma 12B Q4_0 | HIP | 1 | f16/f16 | on | on | 262,144 / 262,140 | 262,144 / 262,140 | 262,144 / 262,140 | 262,144 / 262,140 | 2132 | 13.90 / 7.08 / 0.01 | same | 4816 | 262,144 | model limit |
+| Gemma 12B Q4_0 | HIP | 2 | f16/f16 | on | off | 212,992 / 212,992 | 425,984 / 425,984 | 180,224 / 180,224 | 360,448 / 360,448 | 1009 | 15.97 / 7.08 / 0.01 | 15.00 / 7.08 / 0.01 | 7696 | 217,088 (OOM) | safe limit; maximum not searched |
+| Gemma 12B Q4_0 | HIP | 2 | q4_0/q4_0 | on | off | 262,144 / 262,144 | 524,288 / 524,288 | 262,144 / 262,144 | 524,288 / 524,288 | 3827 | 12.25 / 7.08 / 0.01 | same | 2596 | 262,144 | model limit |
+| Gemma 12B Q4_0 | HIP | 2 | f16/f16 | on | on | 151,552 / 151,548 | 303,104 / 303,096 | 151,552 / 151,548 | 303,104 / 303,096 | 983 | 15.02 / 7.08 / 0.01 | same | 5776 | 196,608 (OOM) | safe limit; maximum not searched |
+| Gemma 12B Q4_0 | VULKAN | 1 | f16/f16 | on | off | 262,144 / 262,144 | 262,144 / 262,144 | 262,144 / 262,144 | 262,144 / 262,144 | 3372 | 12.69 / 6.93 / 0.65 | same | 4816 | 262,144 | model limit |
+| Qwen 9B MTP Q4_K_M | HIP | 1 | f16/f16 | on | off | 262,144 / 262,144 | 262,144 / 262,144 | 249,856 / 249,856 | 249,856 / 249,856 | 526 | 15.89 / 5.77 / 0.01 | 15.47 / 5.77 / 0.01 | 8192 | 262,144 | model limit |
 
 | Model | Backend | Users | Cache K/V | FA | MTP | Allocated tokens | KV MiB | Peak GPU / RAM / GTT GiB | Result |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |

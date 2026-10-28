@@ -6,6 +6,8 @@
   'capacity_profiles': llama_evaluation_capacity_profiles,
   'capacity_refine': llama_evaluation_capacity_refine | bool,
   'mtp_guard_tokens': llama_evaluation_mtp_guard_tokens | int,
+  'kv_unified': llama_evaluation_kv_unified | bool,
+  'text_file': (llama_evaluation_dir ~ '/text.txt') if llama_evaluation_text_file else '',
   'source': llama_evaluation_source,
   'service': llama_evaluation_service,
   'port': llama_evaluation_port | int,

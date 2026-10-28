@@ -46,7 +46,7 @@ llama_evaluation_dir: /var/tmp/llama-evaluation  # New directory for a new matri
 llama_evaluation_context: 16384  # Override with context on an individual model entry
 llama_evaluation_caches: [f16, q8_0, q4_0]
 llama_evaluation_full_context: false  # Optional filled-context check
-# llama_evaluation_full_context_timeout: 3600  # Allow long 256K fills in MTP mode
+# llama_evaluation_full_context_timeout: 600  # Stop a diagnostic wave after ten minutes
 # llama_evaluation_mode: mtp-slots-cache  # 16K per user; MTP off/on; 1/2/4 slots
 # llama_evaluation_retry_from: /var/tmp/previous-run  # Retry only saved HIP FA failures
 llama_evaluation_models:
@@ -84,7 +84,7 @@ Raw benchmark JSON, server logs and image responses stay in the run directory.
 ### 1.3 MTP, users and cache capacity
 
 Set `llama_evaluation_mode: mtp-slots-cache` for the 1/2/4-user matrix.
-It fixes 16K **per user**, FA on and unified KV on. It compares f16/f16,
+It fixes 16K **per user** and FA on. Unified KV defaults to on. It compares f16/f16,
 Q8/Q8 and Q4/Q4 caches. With three models, this gives 18 single-user
 configurations with MTP off and 72 for 2/4 users with MTP off/on. Each model
 needs `max_context`; add `draft` for a separate MTP file. An integrated MTP model
@@ -136,6 +136,48 @@ attempts intact and use a new case directory for an authorized retry.
 
 Use isolated builds for a new source revision and keep the service build intact.
 Quality scoring remains a separate Luna-6 step.
+
+For the HIP long-context timing check, select separate slot caches.
+Upstream documents a [unified-KV slowdown on HIP](https://github.com/ggml-org/llama.cpp/issues/28495).
+Keep total allocation equal to users × context; changing KV mode needs a new memory check.
+This correction is prepared but has not been validated on node2.
+
+```yaml
+llama_evaluation_dir: /var/tmp/llama-filled-speed-split-kv
+llama_evaluation_mode: mtp-slots-cache
+llama_evaluation_capacity_only: true  # Skip the image and 16K matrices
+llama_evaluation_kv_unified: false
+llama_evaluation_text_file: /path/to/agent-history.txt  # Real text; enough to fill the requested context
+llama_evaluation_full_context_timeout: 600  # Maximum seconds per case, including loading and cache fill
+llama_evaluation_capacity_profiles:
+  - model: gemma12-Q4_0
+    backend: hip
+    slots: 4
+    cache: q4_0
+    mtp: false
+    start_context: 131072
+    measure: filled-speed  # One context, no capacity search
+```
+
+`filled-speed` uses text only: fill each slot with saved history, then reuse that
+cache and process 512 new input tokens before generating 128 tokens. The input
+count includes turn formatting and the preceding assistant token still awaiting
+evaluation. The runner checks the reused and new token counts for every slot.
+
+A short check with 4K cached history must pass within 90 seconds before the full fill starts.
+Use `measure: cached-short` to run only that check; it never starts a full fill.
+The entire case stops after ten minutes, or sooner on a cache miss or request
+failure. A failed case stops the queue. No image or quality tests run in this mode.
+
+Cache-fill time, mean TTFT and generation speed stay separate. Streamed token
+timestamps measure TG from the latest user's first token to the earliest user's
+last token. Count only tokens received after the start of that interval, so TG
+excludes every user's prefill and first token. Requests are prepared before the
+start barrier; every user must emit tokens within the shared interval.
+Per-request timings and end-to-end throughput are saved separately. Existing
+16K `Total t/s` includes prefill and is not this TG metric.
+Capacity checks keep prompt reuse off.
+See the [server cache and streaming options](https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md).
 
 Ansible starts a background job; launch success is not test completion. Inspect
 `status-mtp.json` in MTP mode (`status.json` otherwise) and each case's

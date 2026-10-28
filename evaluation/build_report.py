@@ -37,7 +37,7 @@ def render_mtp(run, repo):
     reviews = load(run/'reviews-luna.json') if (run/'reviews-luna.json').exists() else {}
     state = load(run/'status-mtp.json')
     headers = ['Model', 'Backend', 'Users', 'MTP', 'K/V cache', 'FA', 'Prompt t/s/user', 'Gen t/s/user',
-               'Total t/s ± SD', 'Speed ratio (on/off)', 'TTFT ms', 'Request s', 'Draft accept %',
+               'Total t/s ± SD', 'Speed ratio (on/off)', 'TTFT ms (mean)', 'Request s', 'Draft accept %',
                'Image quality %', 'Peak GPU GiB', 'Peak RAM GiB', 'Status']
     rows, answers, summaries = [], {}, {}
     for path in sorted((run/'matched').glob('*/summary.json')):
@@ -94,7 +94,7 @@ def render_mtp(run, repo):
         baselines.append([path.parent.name, 'on', 'f16/f16', fmt(pp.get('avg_ts'))+' ± '+fmt(pp.get('stddev_ts')), fmt(tg.get('avg_ts'))+' ± '+fmt(tg.get('stddev_ts'))])
     cap_headers = ['Model', 'Backend', 'FA', 'Max allocated / usable tokens',
                    'KV MiB', 'Practical allocated / usable tokens', 'Practical GPU free MiB', 'Upper test tokens',
-                   'Full-prompt t/s', 'Generation t/s', 'Peak GPU GiB', 'Peak RAM GiB',
+                   'Peak GPU GiB', 'Peak RAM GiB',
                    'Peak GTT GiB', 'Boundary / status']
     caps = []
     cap_passed = 0
@@ -116,13 +116,10 @@ def render_mtp(run, repo):
         full_dir = item.get('full_result_dir', 'full')
         peaks = {'vram_mib': 0, 'rss_mib': 0, 'gtt_mib': 0}
         kv_mib = None
-        full_timing = {}
         if limit:
             for kind in [full_dir, 'image-memory']:
                 trial = load(path.parent/f'ctx-{limit}'/kind/'trial.json')
                 if kind == full_dir:
-                    full_result = load(path.parent/f'ctx-{limit}'/kind/'result.json')
-                    full_timing = full_result['wave']['requests'][0]['response']['timings']
                     kv_mib = sum(float(v) for line in trial.get('allocations', [])
                         for v in re.findall(r'(?:ROCm|Vulkan)\d+ KV buffer size\s*=\s*([\d.]+) MiB', line))
                 for field in peaks:
@@ -148,7 +145,6 @@ def render_mtp(run, repo):
             practical_free = item.get('gpu_budget_mib', 16384)-practical_peak
         caps.append([item['model'], item['backend'], 'on', pair(limit), kv_mib,
             pair(item['practical_per_user']), practical_free, item['upper_bound_per_user'],
-            full_timing.get('prompt_per_second'), full_timing.get('predicted_per_second'),
             peaks['vram_mib']/1024 if limit or failed_memory else None, peaks['rss_mib']/1024 if limit or failed_memory else None,
             peaks['gtt_mib']/1024 if limit or failed_memory else None, status])
     def table(head, values):
@@ -163,7 +159,7 @@ def render_mtp(run, repo):
     doc += '<h2>1. Detailed results</h2><h3>1.1 Matched tests at 16K per user</h3><p><strong>Shared settings:</strong></p><ul><li>Profiles: 18 single-user with MTP off; 72 for two/four users with MTP off/on</li><li>K/V cache: f16/f16, Q8/Q8 or Q4/Q4</li><li>Speed tests: three batches, 512 input and 128 output tokens per request</li><li>Image quality: four images, one answer each, scored against Luna-6</li><li>Server: restarted before each image wave and timing batch</li></ul>'
     doc += table(headers, rows)
     if supplementary:
-        doc += '<h3>1.2 Single-user MTP-on results</h3><details><summary>Show six f16/f16 profiles</summary>'+table(headers, supplementary)+'</details>'
+        doc += f'<h3>1.2 Single-user MTP-on results</h3><details><summary>Show {len(supplementary)} profiles</summary>'+table(headers, supplementary)+'</details>'
     doc += '<h3>1.3 Ordinary llama-bench</h3><p><strong>Settings:</strong></p><ul><li>Users: 1</li><li>Context: 16K</li><li>MTP: off</li><li>Microbatch: 512</li><li>Speed tests: pp512 and tg128, three runs each</li></ul>'
     doc += table(['Model / backend', 'FA', 'Cache', 'pp512 ± SD', 'tg128 ± SD'], baselines)
     doc += ('<h3>1.4 Full-context measurements</h3><p id="context-limits">Six capacity checks.</p>'
@@ -231,7 +227,7 @@ RAM and GPU-accessible host memory (GTT) can overlap; do not add them together.
 
 '''
     baseline_intro = '\n\n### Ordinary llama-bench at 16K\n\nThree pp512/tg128 repetitions, MTP off, one user, microbatch 512.\nThese are separate from server MTP timings.\n\n'
-    supplement = '\n\n### Earlier single-user MTP-on results\n\nSaved f16/f16 checks, outside the approved 90-configuration matrix.\n\n'+markdown(headers,supplementary) if supplementary else ''
+    supplement = f'\n\n### Single-user MTP-on results\n\n{len(supplementary)} configurations, separate from the 90-profile matrix.\n\n'+markdown(headers,supplementary) if supplementary else ''
     benchmark.write_text(prefix+intro+markdown(headers,rows)+supplement+baseline_intro+
         markdown(['Model / backend', 'FA', 'Cache', 'pp512 ± SD', 'tg128 ± SD'], baselines)+
         capacity_intro+(boundary_notice+'\n\n' if boundary_notice else '')+'\n\n'.join(capacity_failures)+'\n\n'+markdown(cap_headers,caps)+'\n')
@@ -308,6 +304,9 @@ def render_capacity_summary(run, repo, html_only=False):
     failures = data['failures']
     failure_headers = data['failure_headers']
     other_headers, other_rows = data['other_headers'], data['other_rows']
+    keep = [i for i, h in enumerate(other_headers) if 't/s' not in h]
+    other_headers = [other_headers[i] for i in keep]
+    other_rows = [[row[i] for i in keep] for row in other_rows]
     other_intro = ('Practical limits leave at least 512 MiB GPU spare. '
                    'Memory includes image checks where recorded; '
                    'text capacity does not establish long-context image quality.')
@@ -338,7 +337,10 @@ def render_capacity_summary(run, repo, html_only=False):
                 'GPU memory is measured unless marked calculated; calculated values are minimum requirements. — means unavailable.</p>')
     grouped = ''.join(f'<h4 id="capacity-{n}">{n} {"user" if n == 1 else "users"}</h4>'+
                       table(combined_headers, [r[:2]+r[3:] for r in combined if r[2] == n]) for n in [1, 2, 4])
-    section = '<h3>1.4 Full-context measurements</h3><p id="context-limits">'+esc(intro)+'</p>'+settings+grouped+details
+    timing_notice = data.get('timing_notice', '')
+    section = ('<h3>1.4 Full-context measurements</h3>'+
+               ('<p>'+esc(timing_notice)+'</p>' if timing_notice else '')+
+               '<p id="context-limits">'+esc(intro)+'</p>'+settings+grouped+details)
     if html_only:
         return section
     markdown_intro = ('These settings passed a full text fill in every slot with 512 MiB GPU spare. '
@@ -346,10 +348,10 @@ def render_capacity_summary(run, repo, html_only=False):
                       'Allocated is the KV pool; usable includes input and output. MTP drafts at most three tokens '
                       'and reserves four tokens per user. Each slot generated 128 tokens with no input dropped, '
                       'prompt-cache reuse or context shifting. FA and unified KV are on. '
-                      'Reduced contexts are passing settings, not exact maxima. Images and speed were not retested.')
+                      'Reduced contexts are passing settings, not exact maxima. Image quality was not retested.')
     benchmark = repo/'BENCHMARK.md'
     text = benchmark.read_text().split('## 6. Cache capacity')[0].rstrip()
-    text += '\n\n## 6. Cache capacity\n\n'+summary+'\n\n'+markdown_intro+'\n\n'+markdown(headers, rows)+'\n\n'+notes
+    text += '\n\n## 6. Cache capacity\n\n'+(timing_notice+'\n\n' if timing_notice else '')+summary+'\n\n'+markdown_intro+'\n\n'+markdown(headers, rows)+'\n\n'+notes
     text += '\n\n### 6.1 Cache failures and calculated exclusions\n\n'+markdown(failure_headers, failures)
     text += ('\n\n### 6.2 Other measured contexts\n\n'+other_intro+
              ' GPU, process RAM and GTT are separate readings; GTT can overlap RAM.\n\n'+
@@ -397,7 +399,7 @@ def render_capacity(run, repo):
                'Practical allocated / usable per user',
                'Practical allocated / usable total', 'GPU spare MiB',
                'Largest-pass peak GPU / RAM / GTT GiB', 'Practical peak GPU / RAM / GTT GiB',
-               'Full KV MiB', 'Full prompt / generation t/s/user',
+               'Full KV MiB',
                'Upper bound per user', 'Status']
     rows, paged = [], []
     counts = {'passed': 0, 'partial': 0, 'failed': 0, 'unsupported': 0, 'excluded': 0, 'pending': 0}
@@ -417,7 +419,7 @@ def render_capacity(run, repo):
         if practical and not (path/f'ctx-{practical}'/full_dir).exists():
             full_dir = 'full'
         memory_context = practical or limit
-        full_kv, full_speed = '—', '—'
+        full_kv = '—'
         if limit:
             full_path = path/f'ctx-{limit}'/full_dir
             if not full_path.exists():
@@ -430,12 +432,6 @@ def render_capacity(run, repo):
             kv_values = [float(v) for line in trial.get('allocations', [])
                          for v in re.findall(r'(?:ROCm|Vulkan)\d+ KV buffer size\s*=\s*([\d.]+) MiB', line)]
             full_kv = f'{sum(kv_values):.0f}'
-            timings = [r.get('response', {}).get('timings', {}) for r in load(full_path/'result.json')['wave']['requests']]
-            rates = []
-            for metric in ['prompt_per_second', 'predicted_per_second']:
-                values = [t[metric] for t in timings if metric in t]
-                rates.append(f'{sum(values)/len(values):.2f}' if values else '—')
-            full_speed = ' / '.join(rates)
         if memory_context:
             for kind in [full_dir, 'image-memory']:
                 f = path/f'ctx-{memory_context}'/kind/'trial.json'
@@ -494,7 +490,7 @@ def render_capacity(run, repo):
                      ' / '.join(f'{largest_peaks[k]/1024:.2f}' for k in largest_peaks) if limit else
                          (' / '.join(f'{peaks[k]/1024:.2f}' for k in peaks) if peaks['vram_mib'] else '—'),
                      ('same' if practical == limit else ' / '.join(f'{peaks[k]/1024:.2f}' for k in peaks)) if practical else '—',
-                     full_kv, full_speed,
+                     full_kv,
                      upper_text, reason])
         for correction in path.glob('ctx-*/full*/residency-correction.json'):
             raw = load(correction.parent/'result.json')

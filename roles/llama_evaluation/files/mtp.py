@@ -41,11 +41,12 @@ def memory_floor(model, slots, cache, context):
 
 
 def server_args(model, backend, slots, mtp, cache, context, fa='on'):
+    kv = (['--kv-unified', '--kv-unified-per-slot', str(context)]
+          if M.get('kv_unified', True) else ['--no-kv-unified'])
     args = [f"{M['source']}/build-{backend}/bin/llama-server",
             '--model', model['file'], '--mmproj', model['mmproj'],
             '--alias', model['id'], '--ctx-size', str(context * slots),
-            '--parallel', str(slots), '--kv-unified',
-            '--kv-unified-per-slot', str(context), '--no-context-shift',
+            '--parallel', str(slots), *kv, '--no-context-shift',
             '--cache-ram', '0', '--ctx-checkpoints', '0',
             '--flash-attn', fa, '--cache-type-k', cache, '--cache-type-v', cache,
             '--n-gpu-layers', 'all', '--fit', 'off', '--threads', '10',
@@ -114,7 +115,8 @@ class Trial:
              'n_ctx_slot =' in line or 'flash_attn =' in line)]
         layers = re.findall(r'offloaded (\d+)/(\d+) layers', log)
         self.result['full_offload'] = bool(layers) and all(a == b for a, b in layers)
-        self.result['unified'] = "kv_unified = 'true'" in log
+        kv = re.findall(r"kv_unified = '(true|false)'", log)
+        self.result['unified'] = kv[0] == 'true' if kv else None
         attention = re.findall(r'flash_attn\s*=\s*(\w+)', log)
         self.result['fa_on'] = bool(attention) and all(v == 'enabled' for v in attention)
         self.result['projector_gpu'] = bool(re.search(r'CLIP using (ROCm|Vulkan)', log))
@@ -131,12 +133,16 @@ class Trial:
         save(self.dest/'trial.json', self.result)
 
 
-def streamed(body, timeout):
-    started = time.monotonic()
-    req = urllib.request.Request(BASE+'/completion',
-        data=json.dumps(dict(body, stream=True)).encode(),
+def completion_request(body):
+    payload = {k: v for k, v in body.items() if k != 'expected_cache_tokens'}
+    return urllib.request.Request(BASE+'/completion',
+        data=json.dumps(dict(payload, stream=True, return_tokens=True, return_progress=True)).encode(),
         headers={'Content-Type': 'application/json'})
-    final, text, ttft = {}, [], None
+
+
+def streamed(body, timeout, req):
+    started = time.monotonic()
+    final, text, ttft, events, generated = {}, [], None, [], []
     with urllib.request.urlopen(req, timeout=timeout) as response:
         for line in response:
             if not line.startswith(b'data: '):
@@ -146,17 +152,37 @@ def streamed(body, timeout):
             item = json.loads(line[6:])
             if 'error' in item:
                 raise RuntimeError(str(item['error']))
-            if item.get('content'):
+            progress = item.get('prompt_progress')
+            if progress:
+                expected_cache = body.get('expected_cache_tokens')
+                if expected_cache is not None and progress['cache'] != expected_cache:
+                    raise RuntimeError('cached history was not reused; refusing a full re-prefill')
+                continue  # Progress events are not generated tokens.
+            if item.get('tokens') or item.get('content'):
+                elapsed = time.monotonic() - started
                 if ttft is None:
-                    ttft = time.monotonic() - started
-                text.append(item['content'])
+                    ttft = elapsed
+                events.append({'seconds': elapsed, 'tokens': len(item.get('tokens', []))})
+                generated.extend(item.get('tokens', []))
+                text.append(item.get('content', ''))
             if item.get('stop'):
                 final = item
-    return {'seconds': time.monotonic()-started, 'ttft_seconds': ttft,
-            'text': ''.join(text), 'response': final}
+    result = {'seconds': time.monotonic()-started, 'ttft_seconds': ttft,
+              'started_monotonic': started,
+              'token_events': events, 'generated_tokens': generated,
+              'text': ''.join(text), 'response': final}
+    if len(events) > 1:
+        duration = events[-1]['seconds'] - events[0]['seconds']
+        tokens = sum(e['tokens'] for e in events[1:])
+        if duration > 0 and tokens > 0:
+            result.update(decode_seconds=duration, decode_tps=tokens/duration,
+                          mean_tpot_seconds=duration/tokens)
+    return result
 
 
 def wave(bodies, dest, image=False, timeout=1800):
+    # Serialize large histories before releasing the concurrent HTTP clients.
+    prepared = [completion_request(body) for body in bodies] if not image else []
     barrier = threading.Barrier(len(bodies))
     done, occupancy = threading.Event(), []
     def sample():
@@ -177,22 +203,36 @@ def wave(bodies, dest, image=False, timeout=1800):
                 result = {'seconds': time.monotonic()-started, 'response': response,
                           'text': response['choices'][0]['message'].get('content') or ''}
             else:
-                result = streamed(body, timeout)
+                result = streamed(body, timeout, prepared[index])
             result['index'] = index
         except Exception as exc:
+            # Do not leave other slots running after a failed stream/cache check.
+            if _active_proc and _active_proc.poll() is None:
+                _active_proc.kill()
             result = {'index': index, 'error': str(exc), 'seconds': time.monotonic()-started}
         save(dest/f'request-{index}.json', result)
         return result
     thread = threading.Thread(target=sample, daemon=True)
     thread.start()
     started = time.monotonic()
+    expired = threading.Event()
+    proc = _active_proc
+    def expire():
+        expired.set()
+        # Socket timeouts reset on incoming data; enforce a whole-wave deadline.
+        if proc and proc.poll() is None:
+            proc.kill()
+    watchdog = threading.Timer(timeout, expire)
+    watchdog.start()
     try:
         with cf.ThreadPoolExecutor(max_workers=len(bodies)) as pool:
             responses = list(pool.map(one, enumerate(bodies)))
     finally:
+        watchdog.cancel()
         done.set()
         thread.join()
     summary = {'seconds': time.monotonic()-started, 'requests': responses,
+               'timed_out': expired.is_set(),
                'max_active_slots': max([sum(bool(s.get('is_processing')) for s in p['slots'])
                                         for p in occupancy] or [0])}
     save(dest/'occupancy.json', occupancy)
@@ -222,29 +262,82 @@ def token_prompts(n, count):
     return bodies
 
 
-def validate_wave(value, count, slots):
+def agentic_prompts(n, count):
+    """Render real text history and a 512-token next turn without repeating padding."""
+    corpus = Path(M['text_file']).read_text()
+    tokenize = lambda text: request('/tokenize', {'content': text, 'add_special': False,
+                                                  'parse_special': True})['tokens']
+    render = lambda messages: request('/apply-template', {'messages': messages,
+                                    'chat_template_kwargs': {'enable_thinking': False}})['prompt']
+    history_tokens = request('/tokenize', {'content': corpus, 'add_special': False})['tokens']
+    warm, tails = [], []
+    for i in range(n):
+        content = f'User {i}. Review this agent work history:\n@@HISTORY@@\nStart with one status word.'
+        messages = [{'role': 'user', 'content': content}]
+        prefix = render(messages)
+        left, right = map(tokenize, prefix.split('@@HISTORY@@'))
+        needed = count-512-len(left)-len(right)
+        if needed < 0 or needed > len(history_tokens):
+            raise ValueError('text_file must contain enough real text for the requested context; padding is disabled')
+        tokens = left+history_tokens[:needed]+right
+        next_turn = render(messages+[{'role': 'assistant', 'content': '@@ANSWER@@'},
+            {'role': 'user', 'content': 'New tool output:\n@@NEW@@\nExplain the next changes and checks.'}])
+        # Keep the original token prefix, including its thinking-off preamble.
+        # Rendering a completed assistant turn may omit that preamble (Gemma).
+        # Only append the new turn; never replace already cached history.
+        _, suffix = next_turn.split('@@ANSWER@@')
+        tail_left, tail_right = map(tokenize, suffix.split('@@NEW@@'))
+        fresh = 511-len(tail_left)-len(tail_right)  # Plus the last, not-yet-decoded assistant token.
+        if fresh < 0 or needed+fresh > len(history_tokens):
+            raise ValueError('text_file is too short for the new tool output')
+        warm.append({'prompt': tokens, 'id_slot': i, 'n_predict': 1, 'temperature': 0,
+                     'seed': 42, 'ignore_eos': True, 'cache_prompt': False})
+        tails.append(tail_left+history_tokens[needed:needed+fresh]+tail_right)
+    return warm, tails
+
+
+def validate_wave(value, count, slots, predictions=128, cached=0, occupancy=True):
     errors = []
+    if value.get('timed_out'):
+        errors.append('whole-wave time limit exceeded')
     for item in value['requests']:
         if item.get('error'):
             errors.append(f"request {item['index']}: {item['error']}")
             continue
         response = item.get('response', {})
         timing = response.get('timings', {})
-        if (response.get('tokens_evaluated') != count or response.get('tokens_predicted') != 128
-                or timing.get('prompt_n') != count or timing.get('cache_n') != 0):
+        cache_n, prompt_n = timing.get('cache_n', 0), timing.get('prompt_n', 0)
+        cache_ok = (cache_n == count-cached and prompt_n == cached
+                    if cached else cache_n == 0 and prompt_n == count)
+        if (response.get('tokens_evaluated') != count or response.get('tokens_predicted') != predictions
+                or not cache_ok):
             errors.append(f"request {item['index']}: incorrect counts/cache: {item.get('error') or timing}")
+        if response.get('truncated'):
+            errors.append(f"request {item['index']}: input was truncated")
+        if 'token_events' in item and sum(e['tokens'] for e in item['token_events']) != predictions:
+            errors.append(f"request {item['index']}: incomplete token timing stream")
         if response.get('id_slot') != item['index'] or f"User {item['index']}" not in response.get('prompt', ''):
             errors.append(f"request {item['index']}: slot or input marker mismatch")
-    if value['max_active_slots'] != slots:
+    if occupancy and value['max_active_slots'] != slots:
         errors.append('simultaneous server slot occupancy not confirmed')
     return errors
 
 
 def profile(model, backend, slots, mtp, cache, context, dest, kind, repetition=0, fa='on', diagnostics=True):
     dest.mkdir(parents=True, exist_ok=True)
+    cached_text = kind in ('filled-speed', 'cached-short')
     saved = dest/'result.json'
     if saved.exists():
         cached = json.loads(saved.read_text())
+        expected_kv = M.get('kv_unified', True)
+        old_command = cached.get('trial', {}).get('command', [])
+        if (('--kv-unified' in old_command) != expected_kv or cached.get('kind') != kind
+                or cached.get('context_per_user') != context):
+            raise ValueError('Measurement settings differ from the saved result; use a new evidence directory')
+        if cached_text and (
+                cached.get('workload') != 'cached-text-512-v3' or
+                cached.get('text_sha256') != hashlib.sha256(Path(M['text_file']).read_bytes()).hexdigest()):
+            raise ValueError('Text workload changed; use a new evidence directory')
         log = dest/'server.log'
         if cached['status'] != 'passed' and log.exists() and any(
                 marker in log.read_text(errors='replace').lower() for marker in
@@ -269,8 +362,9 @@ def profile(model, backend, slots, mtp, cache, context, dest, kind, repetition=0
         return cached
     result = {'model': model['id'], 'backend': backend, 'slots': slots, 'mtp': mtp,
               'cache': cache, 'context_per_user': context, 'context': context*slots,
-              'fa': fa, 'kind': kind, 'errors': [], 'start_utc': now()}
-    guard = int(M.get('mtp_guard_tokens', 4)) if mtp and kind == 'capacity' else 0
+              'fa': fa, 'kv_unified': M.get('kv_unified', True),
+              'kind': kind, 'errors': [], 'start_utc': now()}
+    guard = int(M.get('mtp_guard_tokens', 4)) if mtp and kind in ('capacity', 'filled-speed', 'cached-short') else 0
     result.update(guard_tokens_per_user=guard, allocated_context_per_user=context,
                   usable_context_per_user=context-guard)
     if kind == 'probe':
@@ -281,20 +375,103 @@ def profile(model, backend, slots, mtp, cache, context, dest, kind, repetition=0
             save(saved, result)
             return result
     trial = Trial(server_args(model, backend, slots, mtp, cache, context, fa), dest)
+    case_expired = threading.Event()
+    case_deadline = time.monotonic()+min(M.get('full_context_timeout', 600), 600)
+    def expire_case():
+        case_expired.set()
+        if trial.proc and trial.proc.poll() is None:
+            trial.proc.kill()
+    case_timer = threading.Timer(max(0, case_deadline-time.monotonic()), expire_case)
+    protocol_timer = None
+    if cached_text:
+        case_timer.start()
     try:
         with trial:
             result['loaded'] = True
-            trial.monitor.abort_on_eviction = kind == 'capacity'
-            if kind in ('speed', 'capacity'):
-                count = 512 if kind == 'speed' else context-guard-128
+            trial.monitor.abort_on_eviction = kind in ('capacity', 'filled-speed', 'cached-short')
+            if kind in ('speed', 'capacity', 'filled-speed', 'cached-short'):
+                count = 4608 if kind == 'cached-short' else 512 if kind == 'speed' else context-guard-128
                 result['input_tokens_per_user'] = count
-                measured = wave(token_prompts(slots, count), dest,
-                                timeout=M.get('full_context_timeout', 3600))
+                timeout = M.get('full_context_timeout', 1800)
+                if cached_text:
+                    result.update(workload='cached-text-512-v3', new_input_tokens_per_user=512,
+                                  cached_input_tokens_per_user=count-512, output_tokens_per_user=128,
+                                  tg_measurement='all-users-decoding-overlap')
+                    result['text_sha256'] = hashlib.sha256(Path(M['text_file']).read_bytes()).hexdigest()
+                    # Validate the protocol first; never spend a long fill discovering a cache/API error.
+                    # The short prefix must exceed Gemma's 1024-token SWA window;
+                    # this build otherwise resets it even for an appended turn.
+                    phases = [('protocol', 4608)]
+                    if kind != 'cached-short':
+                        phases.append(('measurement', count))
+                    for phase, tokens in phases:
+                        phase_dir = dest/phase
+                        prefill_dir = phase_dir/'prefill'
+                        prefill_dir.mkdir(parents=True, exist_ok=True)
+                        deadline = min(case_deadline, time.monotonic()+90) if phase == 'protocol' else case_deadline
+                        if phase == 'protocol':
+                            protocol_timer = threading.Timer(max(0, deadline-time.monotonic()), expire_case)
+                            protocol_timer.start()
+                        warm, tails = agentic_prompts(slots, tokens)
+                        budget = deadline-time.monotonic()
+                        if budget <= 0:
+                            raise TimeoutError('whole-case time limit exceeded')
+                        filled = wave(warm, prefill_dir, timeout=budget)
+                        result[phase] = {'prefill': filled}
+                        errors = validate_wave(filled, tokens-512, slots, predictions=1, occupancy=False)
+                        if errors:
+                            raise RuntimeError('; '.join(errors))
+                        bodies = [dict(b, prompt=b['prompt']+r['generated_tokens']+tail,
+                                       n_predict=128, cache_prompt=True, expected_cache_tokens=tokens-512)
+                                  for b, r, tail in zip(warm, filled['requests'], tails)]
+                        save(phase_dir/'inputs.json', bodies)
+                        budget = deadline-time.monotonic()
+                        if budget <= 0:
+                            raise TimeoutError('whole-case time limit exceeded')
+                        measured = wave(bodies, phase_dir, timeout=budget)
+                        result[phase]['continuation'] = measured
+                        errors = validate_wave(measured, tokens, slots, cached=512, occupancy=False)
+                        if errors:
+                            raise RuntimeError('; '.join(errors))
+                        if not all(r.get('decode_tps') for r in measured['requests']):
+                            raise RuntimeError('complete streamed generation timings not confirmed')
+                        starts = [r['started_monotonic']+r['token_events'][0]['seconds'] for r in measured['requests']]
+                        ends = [r['started_monotonic']+r['token_events'][-1]['seconds'] for r in measured['requests']]
+                        overlap_start, overlap_end = max(starts), min(ends)
+                        # All prefills have finished at the latest first token. Exclude
+                        # first tokens and stop before any user leaves the decode batch.
+                        overlap_tokens = [sum(e['tokens'] for e in r['token_events']
+                                              if overlap_start < r['started_monotonic']+e['seconds'] <= overlap_end)
+                                          for r in measured['requests']]
+                        if overlap_end <= overlap_start or not all(overlap_tokens):
+                            raise RuntimeError('overlapping token generation not confirmed for every user')
+                        measured.update(decode_overlap_seconds=overlap_end-overlap_start,
+                                        decode_overlap_tokens_per_user=overlap_tokens)
+                        save(phase_dir/'wave.json', measured)
+                        if phase == 'protocol':
+                            protocol_timer.cancel()
+                else:
+                    measured = wave(token_prompts(slots, count), dest, timeout=timeout)
                 result['wave'] = measured
-                result['errors'] += validate_wave(measured, count, slots)
+                result['errors'] += validate_wave(measured, count, slots,
+                                                 cached=512 if cached_text else 0,
+                                                 occupancy=not cached_text)
                 if not result['errors']:
-                    result['aggregate_tps'] = slots*128/measured['seconds']
-                    result['per_user_tps'] = [128/r['seconds'] for r in measured['requests']]
+                    result['end_to_end_tps'] = slots*128/measured['seconds']
+                    if kind == 'speed':  # Preserve the established 16K metric.
+                        result['aggregate_tps'] = result['end_to_end_tps']
+                        result['per_user_tps'] = [128/r['seconds'] for r in measured['requests']]
+                    if cached_text:
+                        requests = measured['requests']
+                        duration = measured['decode_overlap_seconds']
+                        result['decode_tps_per_user'] = [n/duration for n in measured['decode_overlap_tokens_per_user']]
+                        result['decode_aggregate_tps'] = sum(result['decode_tps_per_user'])
+                        result['ttft_seconds_mean'] = statistics.mean(r['ttft_seconds'] for r in requests)
+                        # End-to-end throughput also excludes client file writes and monitor shutdown.
+                        first_send = min(r['started_monotonic'] for r in requests)
+                        last_token = max(r['started_monotonic']+r['token_events'][-1]['seconds'] for r in requests)
+                        result['end_to_end_tps'] = slots*128/(last_token-first_send)
+                        result['request_send_skew_seconds'] = max(r['started_monotonic'] for r in requests)-first_send
             elif kind == 'images':
                 offset = repetition * slots
                 bodies = []
@@ -338,18 +515,24 @@ def profile(model, backend, slots, mtp, cache, context, dest, kind, repetition=0
             result['health_after'] = request('/health', timeout=5)
             if result['health_after'].get('status') != 'ok':
                 result['errors'].append('server unhealthy after workload')
-            if kind == 'capacity':
+            if kind in ('capacity', 'filled-speed', 'cached-short'):
                 result['drm_memory_after'] = trial.monitor.drm_memory()
     except Exception as exc:
         result['errors'].append(str(exc))
+    finally:
+        case_timer.cancel()
+        if protocol_timer:
+            protocol_timer.cancel()
     result['trial'] = trial.result
     if result.get('loaded'):
-        for flag in ['full_offload', 'unified', 'projector_gpu']:
+        for flag in ['full_offload', 'projector_gpu']:
             if not trial.result.get(flag):
                 result['errors'].append(f'{flag} not confirmed')
+        if trial.result.get('unified') != M.get('kv_unified', True):
+            result['errors'].append('requested KV mode not confirmed')
         if fa == 'on' and not trial.result.get('fa_on'):
             result['errors'].append('FA on not confirmed')
-        if kind == 'capacity':
+        if kind in ('capacity', 'filled-speed', 'cached-short'):
             host_compute = max([float(value) for line in trial.result.get('allocations', [])
                                 for value in re.findall(r'\w+_Host\s+compute buffer size\s*=\s*([\d.]+) MiB', line)] or [0])
             result['logged_host_compute_mib'] = host_compute
@@ -359,7 +542,7 @@ def profile(model, backend, slots, mtp, cache, context, dest, kind, repetition=0
             if requested is not None and resident is not None and requested-resident > 1:
                 result['errors'].append(f'{requested-resident:.2f} MiB requested VRAM is not resident: GPU residency not established')
         if mtp:
-            if kind in ('speed', 'capacity', 'probe'):
+            if kind in ('speed', 'capacity', 'filled-speed', 'cached-short', 'probe'):
                 drafted = bool(result.get('wave', {}).get('requests')) and all(
                     r.get('response', {}).get('timings', {}).get('draft_n', 0) > 0
                     for r in result['wave']['requests'])
@@ -382,6 +565,14 @@ def profile(model, backend, slots, mtp, cache, context, dest, kind, repetition=0
     if trial.result.get('vram_eviction'):
         result['errors'].append('VRAM eviction to GTT confirmed; stopped the failed fill early')
         result['status'] = 'nonresident_vram'
+    if cached_text and result['status'] == 'passed':
+        peak = trial.result.get('peak_memory_mib', {}).get('vram_mib')
+        if peak is None or _gpu_budget-peak < 512:
+            result['errors'].append('512 MiB GPU headroom not confirmed')
+            result['status'] = 'headroom_failure'
+    phase_waves = [w for p in ['protocol', 'measurement'] for w in result.get(p, {}).values()]
+    if case_expired.is_set() or any(v.get('timed_out') for v in [result.get('wave', {}), *phase_waves]):
+        result['status'] = 'timeout'
     result['stop_utc'] = now()
     save(saved, result)
     print(f"{dest.relative_to(ROOT)}: {result['status']}", flush=True)
@@ -399,7 +590,10 @@ def capacity_curve(model, selected, dest):
     """Search one explicit profile; every reported boundary has a full fill."""
     summary_path = dest/'summary.json'
     if summary_path.exists():
-        return json.loads(summary_path.read_text())
+        cached = json.loads(summary_path.read_text())
+        if cached.get('kv_unified', True) != M.get('kv_unified', True):
+            raise ValueError('KV mode changed; use a new evidence directory')
+        return cached
     backend, slots, mtp, cache = (selected[k] for k in ('backend', 'slots', 'mtp', 'cache'))
     refine = M.get('capacity_refine', True)
     guard = int(M.get('mtp_guard_tokens', 4)) if mtp else 0
@@ -539,6 +733,7 @@ def capacity_curve(model, selected, dest):
         largest is not None and upper-largest <= 4096)
     result = {'id': dest.name, 'model': model['id'], 'backend': backend, 'slots': slots,
               'mtp': mtp, 'cache': cache, 'fa': 'on', 'draft_limit': 3 if mtp else 0,
+              'kv_unified': M.get('kv_unified', True),
               'guard_tokens_per_user': guard, 'gpu_budget_mib': _gpu_budget,
               'largest_passing_per_user': largest, 'practical_per_user': practical,
               'largest_usable_per_user': largest-guard if largest else None,
@@ -565,6 +760,13 @@ def run():
                 or selected['cache'] not in ['f16', 'q8_0', 'q4_0']
                 or not isinstance(selected['mtp'], bool)):
             raise ValueError(f'Invalid capacity profile: {selected}')
+        model = next(m for m in M['models'] if m['id'] == selected['model'])
+        if selected.get('measure') in ('filled-speed', 'cached-short') and (
+                not M.get('capacity_only') or not 4096 <= selected.get('start_context', 0) <= model['max_context']):
+            raise ValueError('Filled-speed needs capacity_only and an explicit context within the model limit')
+        if selected.get('measure') in ('filled-speed', 'cached-short') and (
+                not M.get('text_file') or not Path(M['text_file']).is_file()):
+            raise ValueError('Filled-speed requires a saved text workload before the service is stopped')
     totals = list(Path('/sys/class/drm').glob('card[0-9]*/device/mem_info_vram_total'))
     _gpu_budget = min(float(M.get('vram_limit_mib', 16384)),
                       sum(int(p.read_text()) for p in totals)/2**20)
@@ -587,10 +789,15 @@ def run():
             for backend in sorted(M['backends'])]
     status_file = ROOT/'status-mtp.json'
     previous = json.loads(status_file.read_text()) if status_file.exists() else {}
+    if previous and previous.get('kv_unified', True) != M.get('kv_unified', True):
+        raise ValueError('KV mode changed; use a new evidence directory')
     state = {'start_utc': previous.get('start_utc', now()), 'pid': __import__('os').getpid(),
-             'status': 'running', 'matched': [], 'capacity': [],
+             'status': 'running', 'matched': [], 'capacity': [], 'filled_speed': [], 'short_checks': [],
+             'kv_unified': M.get('kv_unified', True),
              'matched_total': len(matrix_models)*len(M['backends'])*5*len(caches),
-             'capacity_total': len(profiles)}
+             'capacity_total': sum(p.get('measure', 'capacity') == 'capacity' for p in profiles),
+             'filled_speed_total': sum(p.get('measure') == 'filled-speed' for p in profiles),
+             'short_checks_total': sum(p.get('measure') == 'cached-short' for p in profiles)}
     active = previous.get('service_was_active',
         sp.run(['systemctl', 'is-active', '--quiet', M['service']]).returncode == 0)
     state['service_was_active'] = active
@@ -680,8 +887,20 @@ def run():
                 key = f"{model['id']}-{selected['backend']}-n{selected['slots']}-mtp{int(selected['mtp'])}-{selected['cache']}"
                 state['current'] = key
                 save(status_file, state)
-                summary = capacity_curve(model, selected, ROOT/'capacity'/key)
-                state['capacity'].append(summary)
+                if selected.get('measure') in ('filled-speed', 'cached-short'):
+                    kind = selected['measure']
+                    state['phase'] = kind
+                    summary = profile(model, selected['backend'], selected['slots'], selected['mtp'],
+                                      selected['cache'], selected['start_context'],
+                                      ROOT/kind/key/f"ctx-{selected['start_context']}",
+                                      kind, diagnostics=False)
+                    state['short_checks' if kind == 'cached-short' else 'filled_speed'].append(summary)
+                    save(status_file, state)
+                    if summary['status'] != 'passed':
+                        raise RuntimeError(f'{kind} failed; stop the queue for review')
+                else:
+                    summary = capacity_curve(model, selected, ROOT/'capacity'/key)
+                    state['capacity'].append(summary)
                 save(status_file, state)
         state['status'] = 'finished'
     except BaseException as exc:

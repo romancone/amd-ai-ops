@@ -9,6 +9,10 @@ llama_service_user: llama
 llama_state_dir: /var/lib/llama
 llama_port: 8080
 llama_context: 16384
+llama_kv_unified: true
+llama_mtp: false
+llama_draft_tokens: 3
+llama_threads: 10
 llama_flash_attention: "on"
 llama_cache_type_k: f16
 llama_cache_type_v: f16

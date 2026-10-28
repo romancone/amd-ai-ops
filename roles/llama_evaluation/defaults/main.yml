@@ -8,6 +8,8 @@ llama_evaluation_capacity_only: false  # Skip capability, speed, image-quality a
 llama_evaluation_capacity_profiles: []  # Explicit model/backend/slots/cache/mtp capacity rows
 llama_evaluation_capacity_refine: true  # false: validate a safe limit instead of the exact maximum
 llama_evaluation_mtp_guard_tokens: 4  # Reserved per user in MTP capacity checks
+llama_evaluation_kv_unified: true  # false: separate slot caches for HIP long-context diagnosis
+llama_evaluation_text_file: ""  # Controller file: saved agent history/tool output for cached-text checks
 llama_evaluation_service: llama.service
 llama_evaluation_port: 8081
 llama_evaluation_start_utc: ""

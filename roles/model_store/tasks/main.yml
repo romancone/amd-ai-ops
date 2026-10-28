@@ -41,6 +41,9 @@
       - item.mmproj is not defined or item.mmproj is match('^mmproj-[A-Za-z0-9_.-]*BF16\.gguf$')
       - item.mmproj is not defined or item.mmproj != item.file
       - item.mmproj_sha256 is not defined or (item.mmproj is defined and item.mmproj_sha256 is match('^[0-9a-f]{64}$'))
+      - item.draft is not defined or item.draft is match('^[A-Za-z0-9][A-Za-z0-9_.-]*\.gguf$')
+      - item.draft is not defined or item.draft not in [item.file, item.mmproj | default('')]
+      - item.draft_sha256 is not defined or (item.draft is defined and item.draft_sha256 is match('^[0-9a-f]{64}$'))
     fail_msg: Use safe model filenames and a publisher-provided mmproj-...BF16.gguf projector; checksums are optional.
   loop: "{{ models }}"
   loop_control:
