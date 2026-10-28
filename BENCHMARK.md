@@ -366,9 +366,46 @@ These are separate from server MTP timings.
 | qwen35-MTP-Q4_K_M-hip | on | f16/f16 | 1546.23 ± 2.81 | 69.42 ± 0.05 |
 | qwen35-MTP-Q4_K_M-vulkan | on | f16/f16 | 1552.84 ± 1.46 | 74.80 ± 0.07 |
 
+<!-- cached-text:start -->
+### Cached-context TTFT and generation
+
+Original 600-second run: 8/12 passed; 12/12 attempted. HIP, four simultaneous users, FA on, separate slot caches, thinking off and BF16 projectors. Each user reuses context minus 640 cached tokens (minus another four with MTP), then processes 512 new tokens and generates 128. One measurement per case after its short protocol gate.
+
+TTFT is request submission to first token. TG counts tokens strictly after the latest first token through the earliest last token across all four users, excluding every prefill and first token. Per-user TG values follow user order. Earlier 16K Total t/s includes prefill and is a different metric. Cache fill spans the history-fill requests; end-to-end t/s includes the new-input prefill. Both exclude log writes and monitor shutdown. Short-check timings are not full-context results.
+
+| Model | Context/user | MTP | K/V cache | TTFT s mean | TG t/s/user | TG t/s aggregate | Cache fill s | End-to-end t/s | GPU spare MiB | Result |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Gemma 12B Q4_0 | 16,384 | off | q4_0/q4_0 | 1.94 | 26.53 / 26.53 / 26.53 / 26.74 | 106.32 | 60.16 | 71.36 | 7405.04 | passed |
+| Gemma 12B Q4_0 | 16,384 | on | q4_0/q4_0 | 1.97 | 33.37 / 31.44 / 35.02 / 30.33 | 130.16 | 61.38 | 78.24 | 6832.70 | passed |
+| Gemma E4B Q4_0 | 16,384 | off | f16/f16 | 0.80 | 52.90 / 52.90 / 52.90 / 53.32 | 212.02 | 23.79 | 151.40 | 10218.25 | passed |
+| Gemma E4B Q4_0 | 16,384 | on | f16/f16 | 0.96 | 58.96 / 50.60 / 48.28 / 52.93 | 210.77 | 24.39 | 149.90 | 10090.46 | passed |
+| Qwen 9B MTP Q4_K_M | 16,384 | off | q4_0/q4_0 | 1.42 | 36.17 / 35.88 / 35.88 / 36.17 | 144.10 | 45.55 | 96.74 | 8584.61 | passed |
+| Qwen 9B MTP Q4_K_M | 16,384 | on | q4_0/q4_0 | 1.56 | 31.01 / 34.29 / 37.87 / 35.79 | 138.97 | 48.83 | 88.68 | 7208.02 | passed |
+| Gemma 12B Q4_0 | 131,072 | off | q4_0/q4_0 | — | — | — | — | — | 4250.12 | timeout |
+| Gemma 12B Q4_0 | 131,072 | on | q4_0/q4_0 | — | — | — | — | — | 2530.93 | timeout |
+| Gemma E4B Q4_0 | 131,072 | off | f16/f16 | 2.65 | 21.71 / 21.71 / 21.71 / 21.54 | 86.67 | 479.17 | 56.13 | 2798.58 | passed |
+| Gemma E4B Q4_0 | 131,072 | on | f16/f16 | 2.71 | 18.98 / 22.32 / 20.38 / 21.26 | 82.93 | 485.82 | 53.03 | 2419.06 | passed |
+| Qwen 9B MTP Q4_K_M | 131,072 | off | q4_0/q4_0 | — | — | — | — | — | 2311.79 | timeout |
+| Qwen 9B MTP Q4_K_M | 131,072 | on | q4_0/q4_0 | — | — | — | — | — | 2244.77 | oom |
+
+Gemma 12B and E4B MTP-off at 16K were revalidated from saved complete streams after correcting an output-boundary flag check; neither measurement was repeated. Gemma 12B isolated post-wave health was not sampled after the original validation exception; all resident-memory samples passed. Every failed case stopped its queue for diagnosis before any remaining approved profiles were launched. No failed case was rerun. Pending means unattempted. Gemma 12B Q4_0 131072 MTP off: Whole-case timer expired during history fill before continuation measurement; no OOM, device loss or VRAM eviction. Gemma 12B Q4_0 131072 MTP on: Whole-case timer expired during history fill before continuation; incomplete MTP confirmation is a consequence of the stopped fill, not an MTP capability failure. No OOM, device loss or VRAM eviction. Qwen 9B MTP Q4_K_M 131072 MTP off: Whole-case timer expired during history fill before continuation; no OOM, device loss or VRAM eviction. Qwen 9B MTP Q4_K_M 131072 MTP on: Separate-cache MTP context creation failed allocating a 2784.33 MiB GPU compute buffer before the short gate; not a timeout. Evidence: ../amd-ai-ops-evidence-2026-10-25/cached-full-20261028. Service restoration: healthy, original active state and unit SHA256 unchanged.
+
+#### 30-minute timeout reruns
+
+3/3 reruns passed; 3/3 attempted. 11/12 configurations now have a passing measurement. Only the three original 128K timeouts were rerun with a 1,800-second whole-case limit. The 90-second short gate and all model, cache, context and workload settings stayed unchanged. The original attempts above are preserved.
+
+| Model | Context/user | MTP | K/V cache | TTFT s mean | TG t/s/user | TG t/s aggregate | Cache fill s | End-to-end t/s | GPU spare MiB | Result |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Gemma 12B Q4_0 | 131,072 | off | q4_0/q4_0 | 7.27 | 10.56 / 10.48 / 10.48 / 10.48 | 42.01 | 1115.36 | 26.53 | 4251.20 | passed |
+| Gemma 12B Q4_0 | 131,072 | on | q4_0/q4_0 | 6.02 | 13.64 / 12.88 / 11.70 / 12.99 | 51.22 | 1126.03 | 29.53 | 2531.43 | passed |
+| Qwen 9B MTP Q4_K_M | 131,072 | off | q4_0/q4_0 | 5.07 | 12.56 / 12.46 / 12.46 / 12.46 | 49.95 | 1008.10 | 33.69 | 2312.03 | passed |
+
+Only the whole-case deadline changed from 600 to 1800 seconds. Original attempts, successful cases and the Qwen MTP-on OOM are preserved; no other case was rerun. Evidence: ../amd-ai-ops-evidence-2026-10-25/cached-30m-20261028. Service restoration: healthy, original active state and unit SHA256 unchanged.
+<!-- cached-text:end -->
+
 ## 6. Cache capacity
 
-Cached-text short checks passed for all three models with MTP off and on. The 128K TTFT/TG measurements remain pending.
+Cached-context timing results and queue status are recorded above. The capacity results below use unified KV and remain separate.
 
 18/18 cases have a passing configuration.
 

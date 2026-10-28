@@ -81,3 +81,12 @@ includes prefill and must not be labelled TG or directly compared as the same me
 
 Keep raw evidence outside Git. Do not change drivers, packages, build artifacts,
 model files or deployment defaults. No reboot.
+
+## 6. Approved timeout reruns
+
+Follow-up approval on 2026-10-28: rerun only the three 128K cases that reached
+the original 600-second limit: Gemma 12B MTP off/on and Qwen MTP off.
+Use a fresh evidence directory, a 1,800-second whole-case limit and the unchanged
+90-second short gate. All model, backend, cache, slot, context and workload settings
+stay unchanged. Preserve the original attempts and restore the original service.
+No other cases, staging, commits or pushes are authorized by this follow-up.

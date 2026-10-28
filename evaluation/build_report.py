@@ -558,14 +558,111 @@ def render_capacity(run, repo):
     (run/'capacity-tables.md').write_text(summary+'\n\n'+markdown+'\n')
     print(summary)
 
+def render_cached(run, repo):
+    """Add cached-context timings without replacing earlier speed or capacity rows."""
+    import html
+    data = json.loads((run/'cached-text-results.json').read_text())
+    headers = ['Model', 'Context/user', 'MTP', 'K/V cache', 'TTFT s mean',
+               'TG t/s/user', 'TG t/s aggregate', 'Cache fill s', 'End-to-end t/s',
+               'GPU spare MiB', 'Result']
+    fmt = lambda v: f'{v:.2f}' if isinstance(v, (int, float)) else '—'
+    def timing_rows(cases):
+        rows = []
+        for case in cases:
+            passed = case['status'] == 'passed'
+            rows.append([case['model'], f"{case['context_per_user']:,}",
+                         'on' if case['mtp'] else 'off', case['cache']+'/'+case['cache'],
+                         fmt(case.get('ttft_seconds_mean')) if passed else '—',
+                         ' / '.join(fmt(v) for v in case.get('decode_tps_per_user', [])) if passed else '—',
+                         fmt(case.get('decode_aggregate_tps')) if passed else '—',
+                         fmt(case.get('cache_fill_seconds')),
+                         fmt(case.get('end_to_end_tps')) if passed else '—',
+                         fmt(case.get('gpu_spare_mib')), case['status']])
+        return rows
+    rows = timing_rows(data['cases'])
+    passed = sum(c['status'] == 'passed' for c in data['cases'])
+    attempted = sum(c['status'] != 'pending' for c in data['cases'])
+    intro = (f"{passed}/12 passed; {attempted}/12 attempted. HIP, four simultaneous users, FA on, "
+             "separate slot caches, thinking off and BF16 projectors. Each user reuses context minus "
+             "640 cached tokens (minus another four with MTP), then processes 512 new tokens and "
+             "generates 128. One measurement per case after its short protocol gate.")
+    metrics = ('TTFT is request submission to first token. TG counts tokens strictly after the latest '
+               'first token through the earliest last token across all four users, excluding every '
+               'prefill and first token. Per-user TG values follow user order. Earlier 16K Total t/s '
+               'includes prefill and is a different metric. Cache fill spans the history-fill requests; '
+               'end-to-end t/s includes the new-input prefill. Both exclude log writes and monitor shutdown. '
+               'Short-check timings are not full-context results.')
+    evidence = ('Evidence: '+data['evidence']+'. Service restoration: '+data['restoration']+'.')
+    failures = ' '.join(c['model']+' '+str(c['context_per_user'])+' MTP '+('on' if c['mtp'] else 'off')+
+                        ': '+(c.get('diagnosis', {}).get('reason') or '; '.join(c.get('errors', [])))+'.'
+                        for c in data['cases']
+                        if c['status'] not in ('passed', 'pending'))
+    notes = ' '.join(v for v in [data.get('note', ''), failures, evidence] if v)
+    def markdown(values):
+        return '\n'.join(['| '+' | '.join(headers)+' |', '| '+' | '.join(['---']*len(headers))+' |']+
+                         ['| '+' | '.join(row)+' |' for row in values])
+    md = markdown(rows)
+    esc = lambda v: html.escape(str(v))
+    def table(values):
+        return ('<div class="table-wrap"><table><thead>\n<tr>'+''.join('<th>'+esc(h)+'</th>' for h in headers)+
+                '</tr>\n</thead><tbody>\n'+''.join('<tr>'+''.join('<td>'+esc(v)+'</td>' for v in row)+
+                '</tr>\n' for row in values)+'</tbody></table></div>')
+    rerun_md, rerun_html = '', ''
+    if data.get('reruns'):
+        intro = 'Original 600-second run: '+intro
+        reruns = data['reruns']
+        key = lambda c: (c['model'], c['backend'], c['cache'], c['slots'], c['mtp'], c['context_per_user'])
+        passing = {key(c) for c in data['cases']+reruns if c['status'] == 'passed'}
+        rerun_intro = (f"{sum(c['status'] == 'passed' for c in reruns)}/3 reruns passed; "
+                       f"{sum(c['status'] != 'pending' for c in reruns)}/3 attempted. "
+                       f"{len(passing)}/12 configurations now have a passing measurement. "
+                       'Only the three original 128K timeouts were rerun with a 1,800-second whole-case limit. '
+                       'The 90-second short gate and all model, cache, context and workload settings stayed unchanged. '
+                       'The original attempts above are preserved.')
+        rerun_notes = ' '.join(v for v in [data.get('rerun_note', ''),
+            'Evidence: '+data['rerun_evidence']+'. Service restoration: '+data['rerun_restoration']+'.'] if v)
+        rerun_rows = timing_rows(reruns)
+        rerun_md = '\n\n#### 30-minute timeout reruns\n\n'+rerun_intro+'\n\n'+markdown(rerun_rows)+'\n\n'+rerun_notes
+        rerun_html = ('\n<section id="cached-text-reruns"><h4>30-minute timeout reruns</h4>\n<p>'+esc(rerun_intro)+
+                      '</p>\n'+table(rerun_rows)+'\n<p class="small">'+esc(rerun_notes)+'</p>\n</section>')
+    start, end = '<!-- cached-text:start -->', '<!-- cached-text:end -->'
+    def replace(path, section, anchor):
+        text = path.read_text()
+        text = text.replace(
+            'Cached-text short checks passed for all three models with MTP off and on. '
+            'The 128K TTFT/TG measurements remain pending.',
+            'Cached-context timing results and queue status are recorded above. '
+            'The capacity results below use unified KV and remain separate.')
+        block = start+'\n'+section+'\n'+end+'\n'
+        if start in text:
+            left, rest = text.split(start, 1)
+            _, right = rest.split(end, 1)
+            text = left+block+'\n'+right.lstrip('\n')
+        else:
+            text = text.replace(anchor, block+'\n'+anchor, 1)
+        path.write_text(text)
+    replace(repo/'BENCHMARK.md', '### Cached-context TTFT and generation\n\n'+intro+'\n\n'+
+            metrics+'\n\n'+md+'\n\n'+notes+rerun_md, '## 6. Cache capacity')
+    section = ('<section id="cached-text"><h3>Cached-context TTFT and generation</h3>\n<p>'+esc(intro)+
+               '</p>\n<p>'+esc(metrics)+'</p>\n'+table(rows)+'\n<p class="small">'+esc(notes)+'</p>'+rerun_html+'\n</section>')
+    replace(repo/'reports/mtp.html', section, '<h3>1.4 Full-context measurements')
+    print(f'Cached-context timings: {passed}/12 passed; {attempted}/12 attempted')
+    if data.get('reruns'):
+        print(f"30-minute reruns: {sum(c['status'] == 'passed' for c in data['reruns'])}/3 passed")
+
+
 parser=argparse.ArgumentParser()
 parser.add_argument('run',type=Path,nargs='?')
 parser.add_argument('--capacity-run',type=Path,help='Update capacity sections only, preserving measured speed and image results')
+parser.add_argument('--cached-run',type=Path,help='Add verified cached-text-results.json to the timing reports')
 parser.add_argument('--mtp-run',type=Path,help='Render matched MTP and capacity results in reports/mtp.html')
 parser.add_argument('--patched-run',type=Path,action='append',default=[])
 parser.add_argument('--additional-run',type=Path,action='append',default=[])
 parser.add_argument('--reviews',type=Path,help='Luna reference-based judgements; original checklist reviews are not used')
 args=parser.parse_args()
+if args.cached_run:
+    render_cached(args.cached_run, Path(__file__).resolve().parent.parent)
+    raise SystemExit(0)
 if args.mtp_run:
     render_mtp(args.mtp_run, Path(__file__).resolve().parent.parent)
     if args.capacity_run:

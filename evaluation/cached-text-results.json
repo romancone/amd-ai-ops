@@ -1,0 +1,855 @@
+{
+  "date": "2026-10-28",
+  "status": "completed_with_failures",
+  "start_utc": "2026-10-28T00:31:41.782840+00:00",
+  "stop_utc": "2026-10-28T01:32:10.790642+00:00",
+  "case_limit_seconds": 600,
+  "execution_cap_seconds": 7200,
+  "evidence": "../amd-ai-ops-evidence-2026-10-25/cached-full-20261028",
+  "node2_evidence": "/var/tmp/amd-cached-full-20261028",
+  "identity": {
+    "source_revision": "d327bf1f0780f87b8c01b367b61853b0c291d7c4",
+    "patch_sha256": "07feb76af432e44801d2b1e4dd3163ec7850e158d618a60e94b4dd83f457fdc6",
+    "server_sha256": "a75a931e7a1ba1dc79cd80b6273ab2c675a8ef3e559c4d4a97b6413bc51a8d0c",
+    "runner_sha256": {
+      "run.py": "d944eb145c56b1aedea8bf863b5fba3bd32257cce984e7d52732d5f5dd245c64",
+      "mtp.py": "b487dbb0ea4bc52e6fe844e92ab49079077be93165903293c1b08c44a6e2a7e4"
+    },
+    "text_sha256": "d91956ee2d65e77c3c0c3fb7a4db77b2c313b81539970cc5d3b28833fe01e5bd",
+    "unit_sha256": "31a19110c1d4121b75178647300518edfb577cd547c70b0d9b4f3a78e536bbb4"
+  },
+  "runner_sha256": "3e8a1072bda5d29a45bbc8d31a35a6d98b6dfae7107caeb59a2dadb5f969a1e2",
+  "restoration": "healthy, original active state and unit SHA256 unchanged",
+  "note": "Gemma 12B and E4B MTP-off at 16K were revalidated from saved complete streams after correcting an output-boundary flag check; neither measurement was repeated. Gemma 12B isolated post-wave health was not sampled after the original validation exception; all resident-memory samples passed. Every failed case stopped its queue for diagnosis before any remaining approved profiles were launched. No failed case was rerun. Pending means unattempted.",
+  "cases": [
+    {
+      "model": "Gemma 12B Q4_0",
+      "model_id": "gemma12-Q4_0",
+      "backend": "hip",
+      "slots": 4,
+      "cache": "q4_0",
+      "mtp": false,
+      "context_per_user": 16384,
+      "status": "passed",
+      "result_path": "filled-speed/gemma12-Q4_0-hip-n4-mtp0-q4_0/ctx-16384/result.json",
+      "result_sha256": "7c861318dc9ff67b56b4c7b049a3bbace0b68aac308207550f70ff8a4605aadd",
+      "errors": [],
+      "cached_input_tokens_per_user": 15744,
+      "new_input_tokens_per_user": 512,
+      "output_tokens_per_user": 128,
+      "ttft_seconds_mean": 1.9392812362639233,
+      "decode_tps_per_user": [
+        26.5285397133481,
+        26.5285397133481,
+        26.5285397133481,
+        26.739083679327052
+      ],
+      "decode_aggregate_tps": 106.32470281937135,
+      "end_to_end_tps": 71.36317908138263,
+      "validation_correction": {
+        "original_sha256": "cda6f315a7a476f8cb23b248a1417e575c0030d49833fe47e9756978c9b02c64",
+        "reason": "server-context.cpp:2141-2148 sets truncated at the final output context boundary; all cached/input/output/stream counts are exact, context shifting disabled",
+        "no_rerun": true,
+        "resident_memory_samples": 93,
+        "isolated_health_after": "not sampled after original validation exception",
+        "corrected_runner_sha256": "bbae0891045f6c39b1780c97d863420de0febd83193bca8da3c39d1c8d32e83e"
+      },
+      "peak_gpu_mib": 8962.95703125,
+      "gpu_spare_mib": 7405.04296875,
+      "cache_fill_seconds": 60.15580387500813,
+      "decode_overlap_seconds": 4.749601800984237,
+      "decode_overlap_tokens_per_user": [
+        126,
+        126,
+        126,
+        127
+      ],
+      "request_counts": [
+        {
+          "cache_n": 15744,
+          "prompt_n": 512,
+          "predicted_n": 128,
+          "draft_n": null
+        },
+        {
+          "cache_n": 15744,
+          "prompt_n": 512,
+          "predicted_n": 128,
+          "draft_n": null
+        },
+        {
+          "cache_n": 15744,
+          "prompt_n": 512,
+          "predicted_n": 128,
+          "draft_n": null
+        },
+        {
+          "cache_n": 15744,
+          "prompt_n": 512,
+          "predicted_n": 128,
+          "draft_n": null
+        }
+      ]
+    },
+    {
+      "model": "Gemma 12B Q4_0",
+      "model_id": "gemma12-Q4_0",
+      "backend": "hip",
+      "slots": 4,
+      "cache": "q4_0",
+      "mtp": true,
+      "context_per_user": 16384,
+      "status": "passed",
+      "result_path": "filled-speed/gemma12-Q4_0-hip-n4-mtp1-q4_0/ctx-16384/result.json",
+      "result_sha256": "b19af0a8100328dcf38cd048fc7c84709bfed5c705497d09222c06a2dfee95bd",
+      "errors": [],
+      "cached_input_tokens_per_user": 15740,
+      "new_input_tokens_per_user": 512,
+      "output_tokens_per_user": 128,
+      "ttft_seconds_mean": 1.9697385902691167,
+      "decode_tps_per_user": [
+        33.36615436015942,
+        31.435880967422925,
+        35.02067441107642,
+        30.33286760014493
+      ],
+      "decode_aggregate_tps": 130.1555773388037,
+      "end_to_end_tps": 78.23930540975924,
+      "peak_gpu_mib": 9535.3046875,
+      "gpu_spare_mib": 6832.6953125,
+      "cache_fill_seconds": 61.38170358602656,
+      "decode_overlap_seconds": 3.626429305993952,
+      "decode_overlap_tokens_per_user": [
+        121,
+        114,
+        127,
+        110
+      ],
+      "request_counts": [
+        {
+          "cache_n": 15740,
+          "prompt_n": 512,
+          "predicted_n": 128,
+          "draft_n": 156
+        },
+        {
+          "cache_n": 15740,
+          "prompt_n": 512,
+          "predicted_n": 128,
+          "draft_n": 160
+        },
+        {
+          "cache_n": 15740,
+          "prompt_n": 512,
+          "predicted_n": 128,
+          "draft_n": 144
+        },
+        {
+          "cache_n": 15740,
+          "prompt_n": 512,
+          "predicted_n": 128,
+          "draft_n": 168
+        }
+      ]
+    },
+    {
+      "model": "Gemma E4B Q4_0",
+      "model_id": "gemma-e4b-Q4_0",
+      "backend": "hip",
+      "slots": 4,
+      "cache": "f16",
+      "mtp": false,
+      "context_per_user": 16384,
+      "status": "passed",
+      "result_path": "filled-speed/gemma-e4b-Q4_0-hip-n4-mtp0-f16/ctx-16384/result.json",
+      "result_sha256": "21f1b5ab94b1b8f06dcdf11f34b53303cef39802d8bdde4927cb775d18e11ed1",
+      "errors": [],
+      "cached_input_tokens_per_user": 15744,
+      "new_input_tokens_per_user": 512,
+      "output_tokens_per_user": 128,
+      "ttft_seconds_mean": 0.7960356725088786,
+      "decode_tps_per_user": [
+        52.899727312040845,
+        52.899727312040845,
+        52.899727312040845,
+        53.31956641769196
+      ],
+      "decode_aggregate_tps": 212.0187483538145,
+      "end_to_end_tps": 151.4046097946756,
+      "validation_correction": {
+        "original_sha256": "e0c06bdc291f5faebdb11abaed0b60e74e25b1bdaa6eeef5f538ab3f86b60876",
+        "reason": "Duplicate final validator omitted exact-output-boundary rule; saved complete streams pass corrected validator",
+        "no_rerun": true,
+        "corrected_runner_sha256": "3e8a1072bda5d29a45bbc8d31a35a6d98b6dfae7107caeb59a2dadb5f969a1e2",
+        "negative_checks": [
+          "cache miss rejected",
+          "incomplete stream rejected",
+          "missing output rejected",
+          "inexact boundary rejected"
+        ]
+      },
+      "peak_gpu_mib": 6149.75,
+      "gpu_spare_mib": 10218.25,
+      "cache_fill_seconds": 23.787638397014234,
+      "decode_overlap_seconds": 2.38186482997844,
+      "decode_overlap_tokens_per_user": [
+        126,
+        126,
+        126,
+        127
+      ],
+      "request_counts": [
+        {
+          "cache_n": 15744,
+          "prompt_n": 512,
+          "predicted_n": 128,
+          "draft_n": null
+        },
+        {
+          "cache_n": 15744,
+          "prompt_n": 512,
+          "predicted_n": 128,
+          "draft_n": null
+        },
+        {
+          "cache_n": 15744,
+          "prompt_n": 512,
+          "predicted_n": 128,
+          "draft_n": null
+        },
+        {
+          "cache_n": 15744,
+          "prompt_n": 512,
+          "predicted_n": 128,
+          "draft_n": null
+        }
+      ]
+    },
+    {
+      "model": "Gemma E4B Q4_0",
+      "model_id": "gemma-e4b-Q4_0",
+      "backend": "hip",
+      "slots": 4,
+      "cache": "f16",
+      "mtp": true,
+      "context_per_user": 16384,
+      "status": "passed",
+      "result_path": "filled-speed/gemma-e4b-Q4_0-hip-n4-mtp1-f16/ctx-16384/result.json",
+      "result_sha256": "c07f6098221e03f61f6f9bb9830d9f76ccc66f174f4e3214071c0ff821e51c25",
+      "errors": [],
+      "cached_input_tokens_per_user": 15740,
+      "new_input_tokens_per_user": 512,
+      "output_tokens_per_user": 128,
+      "ttft_seconds_mean": 0.9616967212496093,
+      "decode_tps_per_user": [
+        58.960998030546904,
+        50.604321144327656,
+        48.28302200926676,
+        52.92562027938856
+      ],
+      "decode_aggregate_tps": 210.77396146352987,
+      "end_to_end_tps": 149.89878210711245,
+      "peak_gpu_mib": 6277.53515625,
+      "gpu_spare_mib": 10090.46484375,
+      "cache_fill_seconds": 24.386918664036784,
+      "decode_overlap_seconds": 2.153966252983082,
+      "decode_overlap_tokens_per_user": [
+        127,
+        109,
+        104,
+        114
+      ],
+      "request_counts": [
+        {
+          "cache_n": 15740,
+          "prompt_n": 512,
+          "predicted_n": 128,
+          "draft_n": 147
+        },
+        {
+          "cache_n": 15740,
+          "prompt_n": 512,
+          "predicted_n": 128,
+          "draft_n": 166
+        },
+        {
+          "cache_n": 15740,
+          "prompt_n": 512,
+          "predicted_n": 128,
+          "draft_n": 177
+        },
+        {
+          "cache_n": 15740,
+          "prompt_n": 512,
+          "predicted_n": 128,
+          "draft_n": 162
+        }
+      ]
+    },
+    {
+      "model": "Qwen 9B MTP Q4_K_M",
+      "model_id": "qwen35-MTP-Q4_K_M",
+      "backend": "hip",
+      "slots": 4,
+      "cache": "q4_0",
+      "mtp": false,
+      "context_per_user": 16384,
+      "status": "passed",
+      "result_path": "filled-speed/qwen35-MTP-Q4_K_M-hip-n4-mtp0-q4_0/ctx-16384/result.json",
+      "result_sha256": "c6d5888b24ffa4211daf43c746f797c1f7007abcb6ab4364707883ea3bd16f25",
+      "errors": [],
+      "cached_input_tokens_per_user": 15744,
+      "new_input_tokens_per_user": 512,
+      "output_tokens_per_user": 128,
+      "ttft_seconds_mean": 1.419557329005329,
+      "decode_tps_per_user": [
+        36.167998659187006,
+        35.88095105078076,
+        35.88095105078076,
+        36.167998659187006
+      ],
+      "decode_aggregate_tps": 144.09789941993552,
+      "end_to_end_tps": 96.74400639491955,
+      "peak_gpu_mib": 7783.390625,
+      "gpu_spare_mib": 8584.609375,
+      "cache_fill_seconds": 45.54748860897962,
+      "decode_overlap_seconds": 3.4837426639860496,
+      "decode_overlap_tokens_per_user": [
+        126,
+        125,
+        125,
+        126
+      ],
+      "request_counts": [
+        {
+          "cache_n": 15744,
+          "prompt_n": 512,
+          "predicted_n": 128,
+          "draft_n": null
+        },
+        {
+          "cache_n": 15744,
+          "prompt_n": 512,
+          "predicted_n": 128,
+          "draft_n": null
+        },
+        {
+          "cache_n": 15744,
+          "prompt_n": 512,
+          "predicted_n": 128,
+          "draft_n": null
+        },
+        {
+          "cache_n": 15744,
+          "prompt_n": 512,
+          "predicted_n": 128,
+          "draft_n": null
+        }
+      ]
+    },
+    {
+      "model": "Qwen 9B MTP Q4_K_M",
+      "model_id": "qwen35-MTP-Q4_K_M",
+      "backend": "hip",
+      "slots": 4,
+      "cache": "q4_0",
+      "mtp": true,
+      "context_per_user": 16384,
+      "status": "passed",
+      "result_path": "filled-speed/qwen35-MTP-Q4_K_M-hip-n4-mtp1-q4_0/ctx-16384/result.json",
+      "result_sha256": "c8c4bc7f09aec655ed46844102b7e1f5dfb8c480c476722f98135d6d4dcdf3be",
+      "errors": [],
+      "cached_input_tokens_per_user": 15740,
+      "new_input_tokens_per_user": 512,
+      "output_tokens_per_user": 128,
+      "ttft_seconds_mean": 1.5619776467501651,
+      "decode_tps_per_user": [
+        31.01427177778595,
+        34.29462744659023,
+        37.873197267104,
+        35.785698205137635
+      ],
+      "decode_aggregate_tps": 138.96779469661783,
+      "end_to_end_tps": 88.68350038134773,
+      "peak_gpu_mib": 9159.98046875,
+      "gpu_spare_mib": 7208.01953125,
+      "cache_fill_seconds": 48.82548979402054,
+      "decode_overlap_seconds": 3.3532949200016446,
+      "decode_overlap_tokens_per_user": [
+        104,
+        115,
+        127,
+        120
+      ],
+      "request_counts": [
+        {
+          "cache_n": 15740,
+          "prompt_n": 512,
+          "predicted_n": 128,
+          "draft_n": 162
+        },
+        {
+          "cache_n": 15740,
+          "prompt_n": 512,
+          "predicted_n": 128,
+          "draft_n": 144
+        },
+        {
+          "cache_n": 15740,
+          "prompt_n": 512,
+          "predicted_n": 128,
+          "draft_n": 126
+        },
+        {
+          "cache_n": 15740,
+          "prompt_n": 512,
+          "predicted_n": 128,
+          "draft_n": 131
+        }
+      ]
+    },
+    {
+      "model": "Gemma 12B Q4_0",
+      "model_id": "gemma12-Q4_0",
+      "backend": "hip",
+      "slots": 4,
+      "cache": "q4_0",
+      "mtp": false,
+      "context_per_user": 131072,
+      "status": "timeout",
+      "result_path": "filled-speed/gemma12-Q4_0-hip-n4-mtp0-q4_0/ctx-131072/result.json",
+      "result_sha256": "f8297ccd02e480a13d696840b977c1bdab04b82cc8edc4350db4b11abc543865",
+      "errors": [
+        "whole-wave time limit exceeded; request 2: incorrect counts/cache: {}; request 2: incomplete token timing stream; request 2: slot or input marker mismatch; request 3: Remote end closed connection without response"
+      ],
+      "cached_input_tokens_per_user": 130432,
+      "new_input_tokens_per_user": 512,
+      "output_tokens_per_user": 128,
+      "diagnosis": {
+        "status": "timeout",
+        "case_limit_seconds": 600,
+        "completed_histories": 2,
+        "required_histories": 4,
+        "reason": "Whole-case timer expired during history fill before continuation measurement; no OOM, device loss or VRAM eviction",
+        "service_restored": true,
+        "next_action": "Proceed once to the remaining five approved profiles in original order; do not retry this case",
+        "utc": "2026-10-28T00:53:47.832906+00:00"
+      },
+      "peak_gpu_mib": 12117.87890625,
+      "gpu_spare_mib": 4250.12109375
+    },
+    {
+      "model": "Gemma 12B Q4_0",
+      "model_id": "gemma12-Q4_0",
+      "backend": "hip",
+      "slots": 4,
+      "cache": "q4_0",
+      "mtp": true,
+      "context_per_user": 131072,
+      "status": "timeout",
+      "result_path": "continuation-1/filled-speed/gemma12-Q4_0-hip-n4-mtp1-q4_0/ctx-131072/result.json",
+      "result_sha256": "af95185d846acd9671be99b577fea06c605aecd5703ee81bb796e96277068449",
+      "errors": [
+        "whole-wave time limit exceeded; request 2: incorrect counts/cache: {}; request 2: incomplete token timing stream; request 2: slot or input marker mismatch; request 3: incorrect counts/cache: {}; request 3: incomplete token timing stream; request 3: slot or input marker mismatch",
+        "MTP draft execution not confirmed for every text request or image wave"
+      ],
+      "cached_input_tokens_per_user": 130428,
+      "new_input_tokens_per_user": 512,
+      "output_tokens_per_user": 128,
+      "diagnosis": {
+        "status": "timeout",
+        "case_limit_seconds": 600,
+        "completed_histories": 2,
+        "required_histories": 4,
+        "reason": "Whole-case timer expired during history fill before continuation; incomplete MTP confirmation is a consequence of the stopped fill, not an MTP capability failure. No OOM, device loss or VRAM eviction",
+        "service_restored": true,
+        "next_action": "Execute the four unattempted approved E4B/Qwen cases once in original order; no retry",
+        "utc": "2026-10-28T01:04:31.795019+00:00"
+      },
+      "peak_gpu_mib": 13837.0703125,
+      "gpu_spare_mib": 2530.9296875
+    },
+    {
+      "model": "Gemma E4B Q4_0",
+      "model_id": "gemma-e4b-Q4_0",
+      "backend": "hip",
+      "slots": 4,
+      "cache": "f16",
+      "mtp": false,
+      "context_per_user": 131072,
+      "status": "passed",
+      "result_path": "continuation-2/filled-speed/gemma-e4b-Q4_0-hip-n4-mtp0-f16/ctx-131072/result.json",
+      "result_sha256": "691ab620454b8c7192feb6a554df9cefdc869e06738a905150b48e64b08e0d66",
+      "errors": [],
+      "cached_input_tokens_per_user": 130432,
+      "new_input_tokens_per_user": 512,
+      "output_tokens_per_user": 128,
+      "ttft_seconds_mean": 2.6501220675127115,
+      "decode_tps_per_user": [
+        21.711136819481034,
+        21.711136819481034,
+        21.711136819481034,
+        21.53882620980261
+      ],
+      "decode_aggregate_tps": 86.67223666824572,
+      "end_to_end_tps": 56.12685407965321,
+      "peak_gpu_mib": 13569.41796875,
+      "gpu_spare_mib": 2798.58203125,
+      "cache_fill_seconds": 479.17383457900723,
+      "decode_overlap_seconds": 5.8034731689840555,
+      "decode_overlap_tokens_per_user": [
+        126,
+        126,
+        126,
+        125
+      ],
+      "request_counts": [
+        {
+          "cache_n": 130432,
+          "prompt_n": 512,
+          "predicted_n": 128,
+          "draft_n": null
+        },
+        {
+          "cache_n": 130432,
+          "prompt_n": 512,
+          "predicted_n": 128,
+          "draft_n": null
+        },
+        {
+          "cache_n": 130432,
+          "prompt_n": 512,
+          "predicted_n": 128,
+          "draft_n": null
+        },
+        {
+          "cache_n": 130432,
+          "prompt_n": 512,
+          "predicted_n": 128,
+          "draft_n": null
+        }
+      ]
+    },
+    {
+      "model": "Gemma E4B Q4_0",
+      "model_id": "gemma-e4b-Q4_0",
+      "backend": "hip",
+      "slots": 4,
+      "cache": "f16",
+      "mtp": true,
+      "context_per_user": 131072,
+      "status": "passed",
+      "result_path": "continuation-2/filled-speed/gemma-e4b-Q4_0-hip-n4-mtp1-f16/ctx-131072/result.json",
+      "result_sha256": "ba0d4dabdef5990c26bec2ba5ad3d1340300c8f5e7169c42105e97ffc78df339",
+      "errors": [],
+      "cached_input_tokens_per_user": 130428,
+      "new_input_tokens_per_user": 512,
+      "output_tokens_per_user": 128,
+      "ttft_seconds_mean": 2.707904406997841,
+      "decode_tps_per_user": [
+        18.976649844515205,
+        22.31513453938362,
+        20.38232761077559,
+        21.26087621468833
+      ],
+      "decode_aggregate_tps": 82.93498820936274,
+      "end_to_end_tps": 53.02776413479383,
+      "peak_gpu_mib": 13948.94140625,
+      "gpu_spare_mib": 2419.05859375,
+      "cache_fill_seconds": 485.81999479804654,
+      "decode_overlap_seconds": 5.691204764007125,
+      "decode_overlap_tokens_per_user": [
+        108,
+        127,
+        116,
+        121
+      ],
+      "request_counts": [
+        {
+          "cache_n": 130428,
+          "prompt_n": 512,
+          "predicted_n": 128,
+          "draft_n": 182
+        },
+        {
+          "cache_n": 130428,
+          "prompt_n": 512,
+          "predicted_n": 128,
+          "draft_n": 151
+        },
+        {
+          "cache_n": 130428,
+          "prompt_n": 512,
+          "predicted_n": 128,
+          "draft_n": 170
+        },
+        {
+          "cache_n": 130428,
+          "prompt_n": 512,
+          "predicted_n": 128,
+          "draft_n": 157
+        }
+      ]
+    },
+    {
+      "model": "Qwen 9B MTP Q4_K_M",
+      "model_id": "qwen35-MTP-Q4_K_M",
+      "backend": "hip",
+      "slots": 4,
+      "cache": "q4_0",
+      "mtp": false,
+      "context_per_user": 131072,
+      "status": "timeout",
+      "result_path": "continuation-2/filled-speed/qwen35-MTP-Q4_K_M-hip-n4-mtp0-q4_0/ctx-131072/result.json",
+      "result_sha256": "bea4bd35b24d4dcddbf12f151117fa07f62589a1ad2045d71a1d3735f7107836",
+      "errors": [
+        "whole-wave time limit exceeded; request 2: incorrect counts/cache: {}; request 2: incomplete token timing stream; request 2: slot or input marker mismatch; request 3: incorrect counts/cache: {}; request 3: incomplete token timing stream; request 3: slot or input marker mismatch"
+      ],
+      "cached_input_tokens_per_user": 130432,
+      "new_input_tokens_per_user": 512,
+      "output_tokens_per_user": 128,
+      "diagnosis": {
+        "status": "timeout",
+        "case_limit_seconds": 600,
+        "completed_histories": 2,
+        "required_histories": 4,
+        "reason": "Whole-case timer expired during history fill before continuation; no OOM, device loss or VRAM eviction",
+        "service_restored": true,
+        "next_action": "Execute the sole unattempted Qwen MTP-on separate-cache 128K case once; no retry",
+        "utc": "2026-10-28T01:32:03.452496+00:00"
+      },
+      "peak_gpu_mib": 14056.20703125,
+      "gpu_spare_mib": 2311.79296875
+    },
+    {
+      "model": "Qwen 9B MTP Q4_K_M",
+      "model_id": "qwen35-MTP-Q4_K_M",
+      "backend": "hip",
+      "slots": 4,
+      "cache": "q4_0",
+      "mtp": true,
+      "context_per_user": 131072,
+      "status": "oom",
+      "result_path": "continuation-3/filled-speed/qwen35-MTP-Q4_K_M-hip-n4-mtp1-q4_0/ctx-131072/result.json",
+      "result_sha256": "78d89ca1c1844390acad965ee66f2bd07d01df18cc3d517013fd3b6deb508016",
+      "errors": [
+        "server exited 1"
+      ],
+      "cached_input_tokens_per_user": null,
+      "new_input_tokens_per_user": null,
+      "output_tokens_per_user": null,
+      "diagnosis": {
+        "status": "oom",
+        "reason": "Separate-cache MTP context creation failed allocating a 2784.33 MiB GPU compute buffer before the short gate; not a timeout",
+        "service_restored": true,
+        "retried": false,
+        "utc": "2026-10-28T01:32:53.079039+00:00"
+      },
+      "peak_gpu_mib": 14123.2265625,
+      "gpu_spare_mib": 2244.7734375
+    }
+  ],
+  "reruns": [
+    {
+      "model": "Gemma 12B Q4_0",
+      "model_id": "gemma12-Q4_0",
+      "backend": "hip",
+      "slots": 4,
+      "cache": "q4_0",
+      "mtp": false,
+      "context_per_user": 131072,
+      "status": "passed",
+      "case_limit_seconds": 1800,
+      "original_result_path": "filled-speed/gemma12-Q4_0-hip-n4-mtp0-q4_0/ctx-131072/result.json",
+      "original_result_sha256": "f8297ccd02e480a13d696840b977c1bdab04b82cc8edc4350db4b11abc543865",
+      "result_path": "filled-speed/gemma12-Q4_0-hip-n4-mtp0-q4_0/ctx-131072/result.json",
+      "result_sha256": "9c34de8069d5a65ea2f1e9ca60f9ebb41a37f483e8859dffb227bc194ce97355",
+      "errors": [],
+      "cached_input_tokens_per_user": 130432,
+      "new_input_tokens_per_user": 512,
+      "output_tokens_per_user": 128,
+      "ttft_seconds_mean": 7.267522077527246,
+      "decode_tps_per_user": [
+        10.5636897956757,
+        10.480511135867228,
+        10.480511135867228,
+        10.480511135867228
+      ],
+      "decode_aggregate_tps": 42.00522320327738,
+      "end_to_end_tps": 26.527823779870197,
+      "peak_gpu_mib": 12116.8046875,
+      "gpu_spare_mib": 4251.1953125,
+      "cache_fill_seconds": 1115.3571921719704,
+      "decode_overlap_seconds": 12.02231440495234,
+      "decode_overlap_tokens_per_user": [
+        127,
+        126,
+        126,
+        126
+      ],
+      "request_counts": [
+        {
+          "cache_n": 130432,
+          "prompt_n": 512,
+          "predicted_n": 128,
+          "draft_n": null
+        },
+        {
+          "cache_n": 130432,
+          "prompt_n": 512,
+          "predicted_n": 128,
+          "draft_n": null
+        },
+        {
+          "cache_n": 130432,
+          "prompt_n": 512,
+          "predicted_n": 128,
+          "draft_n": null
+        },
+        {
+          "cache_n": 130432,
+          "prompt_n": 512,
+          "predicted_n": 128,
+          "draft_n": null
+        }
+      ]
+    },
+    {
+      "model": "Gemma 12B Q4_0",
+      "model_id": "gemma12-Q4_0",
+      "backend": "hip",
+      "slots": 4,
+      "cache": "q4_0",
+      "mtp": true,
+      "context_per_user": 131072,
+      "status": "passed",
+      "case_limit_seconds": 1800,
+      "original_result_path": "continuation-1/filled-speed/gemma12-Q4_0-hip-n4-mtp1-q4_0/ctx-131072/result.json",
+      "original_result_sha256": "af95185d846acd9671be99b577fea06c605aecd5703ee81bb796e96277068449",
+      "result_path": "filled-speed/gemma12-Q4_0-hip-n4-mtp1-q4_0/ctx-131072/result.json",
+      "result_sha256": "6c678f30ca49616ebf42d61e4aa345c930a32421822e8939d8d67f3e81811f76",
+      "errors": [],
+      "cached_input_tokens_per_user": 130428,
+      "new_input_tokens_per_user": 512,
+      "output_tokens_per_user": 128,
+      "ttft_seconds_mean": 6.0179465125111165,
+      "decode_tps_per_user": [
+        13.636111968602115,
+        12.884515245923259,
+        11.703434681713627,
+        12.991886206305953
+      ],
+      "decode_aggregate_tps": 51.21594810254496,
+      "end_to_end_tps": 29.532235911332137,
+      "peak_gpu_mib": 13836.56640625,
+      "gpu_spare_mib": 2531.43359375,
+      "cache_fill_seconds": 1126.0256593610393,
+      "decode_overlap_seconds": 9.313505219994113,
+      "decode_overlap_tokens_per_user": [
+        127,
+        120,
+        109,
+        121
+      ],
+      "request_counts": [
+        {
+          "cache_n": 130428,
+          "prompt_n": 512,
+          "predicted_n": 128,
+          "draft_n": 153
+        },
+        {
+          "cache_n": 130428,
+          "prompt_n": 512,
+          "predicted_n": 128,
+          "draft_n": 155
+        },
+        {
+          "cache_n": 130428,
+          "prompt_n": 512,
+          "predicted_n": 128,
+          "draft_n": 168
+        },
+        {
+          "cache_n": 130428,
+          "prompt_n": 512,
+          "predicted_n": 128,
+          "draft_n": 154
+        }
+      ]
+    },
+    {
+      "model": "Qwen 9B MTP Q4_K_M",
+      "model_id": "qwen35-MTP-Q4_K_M",
+      "backend": "hip",
+      "slots": 4,
+      "cache": "q4_0",
+      "mtp": false,
+      "context_per_user": 131072,
+      "status": "passed",
+      "case_limit_seconds": 1800,
+      "original_result_path": "continuation-2/filled-speed/qwen35-MTP-Q4_K_M-hip-n4-mtp0-q4_0/ctx-131072/result.json",
+      "original_result_sha256": "bea4bd35b24d4dcddbf12f151117fa07f62589a1ad2045d71a1d3735f7107836",
+      "result_path": "filled-speed/qwen35-MTP-Q4_K_M-hip-n4-mtp0-q4_0/ctx-131072/result.json",
+      "result_sha256": "4f240d84b6cb92376c1b0aa9004cebee85a394e69d08d7697e761a7c6b9ecfdc",
+      "errors": [],
+      "cached_input_tokens_per_user": 130432,
+      "new_input_tokens_per_user": 512,
+      "output_tokens_per_user": 128,
+      "ttft_seconds_mean": 5.074040544495801,
+      "decode_tps_per_user": [
+        12.562708681877785,
+        12.463789715878749,
+        12.463789715878749,
+        12.463789715878749
+      ],
+      "decode_aggregate_tps": 49.954077829514034,
+      "end_to_end_tps": 33.69450739498397,
+      "peak_gpu_mib": 14055.96875,
+      "gpu_spare_mib": 2312.03125,
+      "cache_fill_seconds": 1008.0968029510113,
+      "decode_overlap_seconds": 10.109284806007054,
+      "decode_overlap_tokens_per_user": [
+        127,
+        126,
+        126,
+        126
+      ],
+      "request_counts": [
+        {
+          "cache_n": 130432,
+          "prompt_n": 512,
+          "predicted_n": 128,
+          "draft_n": null
+        },
+        {
+          "cache_n": 130432,
+          "prompt_n": 512,
+          "predicted_n": 128,
+          "draft_n": null
+        },
+        {
+          "cache_n": 130432,
+          "prompt_n": 512,
+          "predicted_n": 128,
+          "draft_n": null
+        },
+        {
+          "cache_n": 130432,
+          "prompt_n": 512,
+          "predicted_n": 128,
+          "draft_n": null
+        }
+      ]
+    }
+  ],
+  "rerun_case_limit_seconds": 1800,
+  "rerun_status": "finished",
+  "rerun_start_utc": "2026-10-28T07:59:01.460935+00:00",
+  "rerun_stop_utc": "2026-10-28T08:55:22.962704+00:00",
+  "rerun_evidence": "../amd-ai-ops-evidence-2026-10-25/cached-30m-20261028",
+  "rerun_node2_evidence": "/var/tmp/amd-cached-30m-20261028",
+  "rerun_runner_sha256": "00398d97c87b16b00ef864a659f0196ea1c227c33ab6224645fff29bb21ddb32",
+  "rerun_restoration": "healthy, original active state and unit SHA256 unchanged",
+  "rerun_note": "Only the whole-case deadline changed from 600 to 1800 seconds. Original attempts, successful cases and the Qwen MTP-on OOM are preserved; no other case was rerun."
+}

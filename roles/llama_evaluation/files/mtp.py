@@ -296,7 +296,8 @@ def agentic_prompts(n, count):
     return warm, tails
 
 
-def validate_wave(value, count, slots, predictions=128, cached=0, occupancy=True):
+def validate_wave(value, count, slots, predictions=128, cached=0, occupancy=True,
+                  output_boundary=None):
     errors = []
     if value.get('timed_out'):
         errors.append('whole-wave time limit exceeded')
@@ -312,8 +313,18 @@ def validate_wave(value, count, slots, predictions=128, cached=0, occupancy=True
         if (response.get('tokens_evaluated') != count or response.get('tokens_predicted') != predictions
                 or not cache_ok):
             errors.append(f"request {item['index']}: incorrect counts/cache: {item.get('error') or timing}")
-        if response.get('truncated'):
-            errors.append(f"request {item['index']}: input was truncated")
+        # With context shifting off, this server also marks the final output
+        # token at an exactly filled context as truncated. Require the complete
+        # input/cache counts and streamed output before accepting that boundary.
+        boundary_stop = (output_boundary is not None and count+predictions == output_boundary
+                         and response.get('tokens_evaluated') == count and cache_ok
+                         and response.get('tokens_predicted') == predictions
+                         and response.get('tokens_cached') == output_boundary-1
+                         and response.get('stop_type') == 'limit'
+                         and sum(e['tokens'] for e in item.get('token_events', [])) == predictions
+                         and len(item.get('generated_tokens', [])) == predictions)
+        if response.get('truncated') and not boundary_stop:
+            errors.append(f"request {item['index']}: truncation without a complete output boundary")
         if 'token_events' in item and sum(e['tokens'] for e in item['token_events']) != predictions:
             errors.append(f"request {item['index']}: incomplete token timing stream")
         if response.get('id_slot') != item['index'] or f"User {item['index']}" not in response.get('prompt', ''):
@@ -376,7 +387,10 @@ def profile(model, backend, slots, mtp, cache, context, dest, kind, repetition=0
             return result
     trial = Trial(server_args(model, backend, slots, mtp, cache, context, fa), dest)
     case_expired = threading.Event()
-    case_deadline = time.monotonic()+min(M.get('full_context_timeout', 600), 600)
+    case_limit = min(M.get('full_context_timeout', 600), 1800)
+    case_deadline = time.monotonic()+case_limit
+    if cached_text:
+        result['case_limit_seconds'] = case_limit
     def expire_case():
         case_expired.set()
         if trial.proc and trial.proc.poll() is None:
@@ -430,7 +444,8 @@ def profile(model, backend, slots, mtp, cache, context, dest, kind, repetition=0
                             raise TimeoutError('whole-case time limit exceeded')
                         measured = wave(bodies, phase_dir, timeout=budget)
                         result[phase]['continuation'] = measured
-                        errors = validate_wave(measured, tokens, slots, cached=512, occupancy=False)
+                        errors = validate_wave(measured, tokens, slots, cached=512, occupancy=False,
+                                               output_boundary=context if not mtp else None)
                         if errors:
                             raise RuntimeError('; '.join(errors))
                         if not all(r.get('decode_tps') for r in measured['requests']):
@@ -455,7 +470,8 @@ def profile(model, backend, slots, mtp, cache, context, dest, kind, repetition=0
                 result['wave'] = measured
                 result['errors'] += validate_wave(measured, count, slots,
                                                  cached=512 if cached_text else 0,
-                                                 occupancy=not cached_text)
+                                                 occupancy=not cached_text,
+                                                 output_boundary=context if cached_text and not mtp else None)
                 if not result['errors']:
                     result['end_to_end_tps'] = slots*128/measured['seconds']
                     if kind == 'speed':  # Preserve the established 16K metric.

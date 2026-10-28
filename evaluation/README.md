@@ -166,8 +166,10 @@ evaluation. The runner checks the reused and new token counts for every slot.
 
 A short check with 4K cached history must pass within 90 seconds before the full fill starts.
 Use `measure: cached-short` to run only that check; it never starts a full fill.
-The entire case stops after ten minutes, or sooner on a cache miss or request
-failure. A failed case stops the queue. No image or quality tests run in this mode.
+The entire case uses `llama_evaluation_full_context_timeout`, capped at 1,800
+seconds, or stops sooner on a cache miss or request failure. The example uses
+600 seconds; the short gate stays at 90 seconds. A failed case stops the queue.
+No image or quality tests run in this mode.
 
 Cache-fill time, mean TTFT and generation speed stay separate. Streamed token
 timestamps measure TG from the latest user's first token to the earliest user's
@@ -261,3 +263,19 @@ This updates capacity sections while preserving speed tables, image answers
 and scores. For context searches, `reuse.json` links completed summaries and the
 manifest lists selected profiles; missing results remain pending. Combine
 `--mtp-run` and `--capacity-run` to rebuild matched and capacity sections together.
+
+For cached-context timings, retain the verified condensed results in
+`evaluation/cached-text-results.json`, including failures and unattempted cases.
+After rebuilding any matched or capacity sections, add the cached timings:
+
+```bash
+python3 evaluation/build_report.py --cached-run evaluation
+```
+
+This updates the marked cached-text sections and timing notices in `BENCHMARK.md`
+and `reports/mtp.html`. Existing speed, capacity and image results stay intact.
+`reports/index.html` remains hand-maintained; copy the verified cached timing
+section there when updating recommendations. Raw streams, token IDs and server
+logs remain in the external evidence directory recorded in the condensed input.
+Authorized reruns use a separate `reruns` array and evidence directory; the
+original `cases` and result table stay intact.
