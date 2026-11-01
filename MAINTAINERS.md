@@ -14,9 +14,9 @@ the manual recipes.
 | [AGENTS.md](AGENTS.md) | Contribution rules and temporary internal evidence pointers |
 | [README.md](README.md) | Quick starts, compatibility, acceptance criteria and a short changelog |
 | [MODELS.md](MODELS.md) | Model descriptions, file sizes and complete Ansible/Runme profiles for every model, including the current default |
-| [BENCHMARK.md](BENCHMARK.md) | Measured settings, results, comparisons, conclusions and limitations |
-| [reports/](reports/) | Hand-maintained `index.html` owns recommendations; generated `report.html` owns model-test details and `mtp.html` owns MTP/users and context-capacity details. All three share navigation and `style.css` |
-| [evaluation/](evaluation/) / [evaluation.yml](evaluation.yml) | Evaluation runner, scoring inputs and report-generation sources; HTML output lives in `reports/`, raw logs stay outside the repository |
+| [BENCHMARK.md](BENCHMARK.md) | Generated benchmark summary from `reports/benchmark-data.js`; regenerate with `python3 evaluation/build_report.py --markdown` |
+| [reports/](reports/) | `benchmark-data.js` owns configurations, measurements and image answers; catalog entries reference those records. Imports retain prior attempts; model aliases share stable selection keys. `benchmark-view.js` resolves references for both pages. `index.html` owns the comparison widget, capacity picks and MTP image viewer; `llama-bench.html` displays model benchmarks and saved image answers. `index.css` styles both pages |
+| [evaluation/](evaluation/) / [evaluation.yml](evaluation.yml) | Evaluation runner, scoring inputs and structured importers; `build_report.py` imports results, `report_data.py` merges/stores records and exports BENCHMARK.md. HTML pages are hand-maintained; raw logs stay outside the repository |
 | [cleanup.md](cleanup.md) / [cleanup.yml](cleanup.yml) | Optional ROCm cleanup |
 | [rocm.md](rocm.md) / [site.yml](site.yml) | Generic development tools, then AMD libraries |
 | [llama.md](llama.md) / [llama.yml](llama.yml) | Current default model recipe and role entry point; alternatives link to MODELS.md |
@@ -44,6 +44,8 @@ on its own. Keep both copies aligned with role behavior and inventory values.
   login user. Authentication belongs to that user; files remain readable by the
   service. Existing files are reused unless an optional checksum requires replacement.
   Downloads use the optional `revision`, or the repository default.
+  Optional `draft` and `draft_sha256` download and verify a matching draft from
+  the same repository and revision as the target model
 - `llama` creates the service user before invoking `model_store`, then builds the
   selected backend and serves the entry named by `llama_model`. Backend builds
   use separate directories; only one localhost systemd service runs at a time.
@@ -61,6 +63,17 @@ token settings must be supplied together and fit within `llama_ubatch`;
 `llama_batch` must be at least `llama_ubatch`. Model-specific image budgets
 live in inventory and [MODELS.md](MODELS.md). When a projector is enabled,
 the role checks that it loads on the selected GPU backend.
+
+`llama_mtp` enables `draft-mtp` with `llama_draft_tokens` (three by default).
+The selected model needs either `draft` or `mtp_builtin: true`. The draft uses
+the target cache types and full GPU offload. The generation check requires
+`timings.draft_n > 0` when MTP is enabled.
+
+`llama_context` is the total allocation across `llama_parallel` slots.
+`llama_kv_unified` enables a shared KV pool with an equal per-slot limit;
+the role verifies the logged KV mode. MTP reserves four tokens per slot with
+three draft tokens. Context shifting, automatic memory fitting, prompt RAM cache
+and context checkpoints are disabled to match the measured profiles.
 
 Source updates follow the upstream default branch unless overridden. The HIP
 Flash Attention patch applies to `gfx103x`; its kernel also checks the GPU family.
@@ -96,12 +109,12 @@ Update roles, recipe markers and this map together.
 | llama 1.1 Configure the model | [llama/main.yml](roles/llama/tasks/main.yml) | `llama.settings.require`; values from role defaults and inventory |
 | llama 1.2 Service user | [llama/main.yml](roles/llama/tasks/main.yml) | `llama.user.create`, `llama.state.prepare` |
 | llama 1.3 Hugging Face CLI | [model_store/main.yml](roles/model_store/tasks/main.yml) | `model_store.hf.install`, `model_store.hf.link` |
-| llama 1.4 Model and optional BF16 projector | [model_store/download.yml](roles/model_store/tasks/download.yml), [artifact.yml](roles/model_store/tasks/artifact.yml) | `llama.model.prepare`, `llama.model.download`, `model_store.artifact.permissions`, optional `model_store.artifact.verify` |
+| llama 1.4 Model, optional BF16 projector and draft | [model_store/download.yml](roles/model_store/tasks/download.yml), [artifact.yml](roles/model_store/tasks/artifact.yml) | `llama.model.prepare`, `llama.model.download`, `model_store.artifact.permissions`, optional `model_store.artifact.verify` |
 | llama 1.5 Source | [llama/source.yml](roles/llama/tasks/source.yml) | `llama.source.prepare`, `llama.source.checkout`; managed patch removal before updates |
 | llama 2.1 Vulkan build | [llama/main.yml](roles/llama/tasks/main.yml) | `llama.vulkan.configure`, `llama.vulkan.build`, `llama.backends.verify` |
 | llama 3.1 HIP build | [llama/source.yml](roles/llama/tasks/source.yml), [main.yml](roles/llama/tasks/main.yml) | `llama.hip.patch`, `llama.compiler.locate`, `llama.hip.configure`, `llama.hip.build`, `llama.backends.verify` |
 | llama 2.2 / 3.2 Service | [llama/main.yml](roles/llama/tasks/main.yml), [service template](roles/llama/templates/llama.service.j2) | `llama.systemd.write`, `llama.systemd.reload`, `llama.systemd.start` |
-| llama 2.3 / 3.3 Shared verification | [llama/main.yml](roles/llama/tasks/main.yml) | `llama.health.verify`, `llama.models.verify`, `llama.inference.verify`, `llama.service.inspect`, `llama.offload.verify` (including FA and optional projector placement) |
+| llama 2.3 / 3.3 Shared verification | [llama/main.yml](roles/llama/tasks/main.yml) | `llama.health.verify`, `llama.models.verify`, `llama.inference.verify` (including MTP drafting), `llama.service.inspect`, `llama.offload.verify` (including FA, KV mode and optional projector placement) |
 | llama 4.1 Image example | Manual only | Describe a supplied image and review the answer; the role checks projector loading, not image-answer quality |
 
 ## Validation and Check Mode

@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Model benchmarks with llama-bench · AMD AI Ops</title>
+<link rel="stylesheet" href="index.css">
+<script src="benchmark-data.js"></script>
+<script src="benchmark-view.js"></script>
+<script src="llama-bench.js" defer></script>
+</head>
+<body>
+<main class="mtp">
+<nav class="report-nav" aria-label="Reports"><a href="index.html">Model benchmarks with real prompts</a><a href="llama-bench.html" aria-current="page">Model benchmarks with llama-bench</a></nav>
+<h1>Model benchmarks with llama-bench</h1>
+<p class="sub">Model benchmarks on the RX 6900 XT · 16 GiB GPU memory</p>
+<h2>1. Compare configurations</h2>
+<p>Filter by model, backend, weight format and cache. The table compares <strong>K/V cache</strong> formats for keys and values. QAT means quantization-aware training. All runs used Flash Attention.</p>
+<p><strong>pp512</strong> measures prompt reading (512 tokens) and <strong>tg128</strong> measures generation (128 tokens). Speeds show the mean ± standard deviation across three runs. <strong>Image quality</strong> averages four descriptions scored against the Luna-6 reference. <strong>GPU GiB</strong> is GPU memory use recorded at the end of each test.</p>
+<div id="bench-panel">
+<div class="picker comparison-filters">
+<div class="bench-filter-pair">
+<div><span class="seg-label">Model</span><span class="seg" id="bench-model" role="group" aria-label="Model"></span></div>
+<div><span class="seg-label">Backend</span><span class="seg" id="bench-backend" role="group" aria-label="Backend"></span></div>
+</div>
+<div class="bench-filter-pair">
+<div><span class="seg-label">Model quant</span><span class="seg" id="bench-weights" role="group" aria-label="Model quant"></span></div>
+<div><span class="seg-label">K/V cache</span><span class="seg" id="bench-cache" role="group" aria-label="K/V cache"></span></div>
+</div>
+</div>
+<details id="bench-preview">
+<summary>Image preview</summary>
+<label>Configuration <select id="bench-config"></select></label>
+<label>Image <select id="bench-image"></select></label>
+<div><img id="bench-picture" alt=""></div>
+<p id="bench-question"></p>
+<strong>Model answer</strong><p id="bench-answer"></p>
+<p id="bench-review"></p>
+<details><summary>Image measurements</summary><p id="bench-image-metrics"></p><p id="bench-score-breakdown"></p></details>
+<details><summary>Luna-6 reference</summary><p id="bench-reference"></p></details>
+</details>
+<div class="table-wrap">
+<table id="bench-table">
+<thead>
+<tr><th scope="col">Model</th><th scope="col">Backend</th><th scope="col">Model quant</th><th scope="col">K/V cache</th><th scope="col">pp512 t/s</th><th scope="col">tg128 t/s</th><th scope="col">Image quality %</th><th scope="col">GPU GiB</th><th scope="col">Images</th></tr>
+</thead>
+<tbody id="bench-rows"></tbody>
+</table>
+</div>
+</div>
+</main>
+</body>
+</html>

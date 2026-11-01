@@ -15,8 +15,41 @@ a:focus-visible, button:focus-visible, select:focus-visible { outline: 2px solid
 table { width: 100%; border-collapse: collapse; font-size: .9rem; }
 caption { text-align: left; padding: 16px; font-weight: 650; }
 th, td { padding: 14px 12px; border-top: 1px solid #dce2e9; text-align: left; }
-th { background: #e9eff5; }
+th { background: #e9eff5; white-space: nowrap; }
 .num { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.change-positive { color: #216341; }
+.change-negative { color: #a32622; }
+.profile-tab { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+.profile-tabs > label { display: inline-flex; align-items: center; justify-content: center; vertical-align: bottom; padding: 12px 18px; margin: 0 2px -1px 0; border: 1px solid #cbd4de; border-radius: 8px 8px 0 0; background: #dde5ee; color: #45576a; font-weight: 650; cursor: pointer; }
+.profile-tabs > label:hover { background: #e9eff5; }
+.profile-tab:checked + label { position: relative; z-index: 1; padding-top: 10px; border-top: 3px solid #165e9e; border-bottom-color: #e9eff5; background: #e9eff5; color: #172538; }
+.profile-tab:focus-visible + label { outline: 2px solid #165e9e; outline-offset: -5px; }
+.profile-tabs > .table-wrap { margin-top: 0; border-top-left-radius: 0; }
+.profile-tabs thead th { border-top: 0; }
+.profile-tabs .profile-rows { visibility: collapse; }
+.profile-tabs .profile-notes { display: none; }
+#profile-one:checked ~ .table-wrap .profile-one,
+#profile-two:checked ~ .table-wrap .profile-two,
+#profile-two-64:checked ~ .table-wrap .profile-two-64,
+#profile-two-128:checked ~ .table-wrap .profile-two-128,
+#profile-four:checked ~ .table-wrap .profile-four,
+#profile-four-64:checked ~ .table-wrap .profile-four-64,
+#profile-four-full:checked ~ .table-wrap .profile-four-full,
+#profile-four-256:checked ~ .table-wrap .profile-four-256,
+#context-one:checked ~ .table-wrap .context-one,
+#context-two:checked ~ .table-wrap .context-two,
+#context-four:checked ~ .table-wrap .context-four,
+#memory-small:checked ~ .table-wrap .memory-small,
+#memory-eight:checked ~ .table-wrap .memory-eight,
+#memory-sixteen:checked ~ .table-wrap .memory-sixteen { visibility: visible; }
+#profile-one:checked ~ .profile-one,
+#profile-two:checked ~ .profile-two,
+#profile-two-64:checked ~ .profile-two-64,
+#profile-two-128:checked ~ .profile-two-128,
+#profile-four:checked ~ .profile-four,
+#profile-four-64:checked ~ .profile-four-64,
+#profile-four-full:checked ~ .profile-four-full,
+#profile-four-256:checked ~ .profile-four-256 { display: block; }
 .notes { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 16px; }
 article { background: white; padding: 8px 20px; border-radius: 8px; border: 1px solid #cbd4de; }
 .small { font-size: .86rem; color: #45576a; }

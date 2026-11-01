@@ -18,6 +18,16 @@ ExecStart={{ llama_source_dir }}/build-{{ llama_backend }}/bin/llama-server \
     --alias {{ llama_model }} \
     --ctx-size {{ llama_context }} \
     --parallel {{ llama_parallel }} \
+{% if llama_kv_unified %}
+    --kv-unified \
+    --kv-unified-per-slot {{ (llama_context | int) // (llama_parallel | int) }} \
+{% else %}
+    --no-kv-unified \
+{% endif %}
+    --no-context-shift \
+    --cache-ram 0 \
+    --ctx-checkpoints 0 \
+    --threads {{ llama_threads }} \
     --batch-size {{ llama_batch }} \
     --ubatch-size {{ llama_ubatch }} \
 {% if llama_image_min_tokens is not none %}
@@ -28,6 +38,15 @@ ExecStart={{ llama_source_dir }}/build-{{ llama_backend }}/bin/llama-server \
     --cache-type-k {{ llama_cache_type_k }} \
     --cache-type-v {{ llama_cache_type_v }} \
     --n-gpu-layers all \
+    --fit off \
+    --spec-type {{ 'draft-mtp' if llama_mtp else 'none' }} \
+    --spec-draft-n-max {{ llama_draft_tokens }} \
+    --spec-draft-ngl all \
+    --spec-draft-type-k {{ llama_cache_type_k }} \
+    --spec-draft-type-v {{ llama_cache_type_v }} \
+{% if llama_mtp and llama_model_config.draft is defined %}
+    --spec-draft-model {{ model_store_root }}/{{ llama_model }}/{{ llama_model_config.draft }} \
+{% endif %}
     --host 127.0.0.1 \
     --port {{ llama_port }} \
     --jinja \

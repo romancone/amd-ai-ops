@@ -7,6 +7,7 @@
       - llama_evaluation_capacity_only is boolean
       - not llama_evaluation_capacity_only or (llama_evaluation_mode == 'mtp-slots-cache' and llama_evaluation_capacity and llama_evaluation_capacity_profiles | length > 0)
       - llama_evaluation_capacity_refine is boolean
+      - llama_evaluation_kv_unified is boolean
       - llama_evaluation_mtp_guard_tokens | int >= 0
       - llama_evaluation_mtp_guard_tokens | int <= 16
       - llama_evaluation_context | int >= 1024
@@ -35,6 +36,9 @@
       - item.slots in [1, 2, 4]
       - item.cache in ['f16', 'q8_0', 'q4_0']
       - item.mtp is boolean
+      - item.measure | default('capacity') in ['capacity', 'filled-speed', 'cached-short']
+      - item.measure | default('capacity') not in ['filled-speed', 'cached-short'] or (llama_evaluation_capacity_only and item.start_context is defined)
+      - item.measure | default('capacity') not in ['filled-speed', 'cached-short'] or llama_evaluation_text_file | length > 0
       - item.start_context | default(4096) is integer
       - item.start_context | default(4096) >= 4096
   loop: "{{ llama_evaluation_capacity_profiles }}"
@@ -53,6 +57,12 @@
     src: mtp.py
     dest: "{{ llama_evaluation_dir }}/mtp.py"
     mode: '0644'
+- name: Copy text workload
+  ansible.builtin.copy:
+    src: "{{ llama_evaluation_text_file }}"
+    dest: "{{ llama_evaluation_dir }}/text.txt"
+    mode: '0600'
+  when: llama_evaluation_text_file | length > 0
 - name: Copy reference images
   ansible.builtin.copy:
     src: "{{ playbook_dir }}/media/qengineering/"

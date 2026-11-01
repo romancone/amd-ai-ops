@@ -1,9 +1,8 @@
 # Model evaluation
 
-Start at [reports/index.html](../reports/index.html). The three report tabs link
-to recommendations, model tests and MTP/users; they share `reports/style.css`.
-`evaluation/` contains the image questions, frozen reference, scoring rules,
-template and report builder.
+Start at [Model benchmarks with real prompts](../reports/index.html) for comparisons, maximum
+context, memory and saved MTP image answers. [Model benchmarks with llama-bench](../reports/llama-bench.html)
+retain the original weight-variant tests and image viewer.
 The GPU runner lives in [roles/llama_evaluation](../roles/llama_evaluation/).
 
 This evaluation adapts the image questions in
@@ -46,7 +45,7 @@ llama_evaluation_dir: /var/tmp/llama-evaluation  # New directory for a new matri
 llama_evaluation_context: 16384  # Override with context on an individual model entry
 llama_evaluation_caches: [f16, q8_0, q4_0]
 llama_evaluation_full_context: false  # Optional filled-context check
-# llama_evaluation_full_context_timeout: 3600  # Allow long 256K fills in MTP mode
+# llama_evaluation_full_context_timeout: 600  # Stop a diagnostic wave after ten minutes
 # llama_evaluation_mode: mtp-slots-cache  # 16K per user; MTP off/on; 1/2/4 slots
 # llama_evaluation_retry_from: /var/tmp/previous-run  # Retry only saved HIP FA failures
 llama_evaluation_models:
@@ -84,7 +83,7 @@ Raw benchmark JSON, server logs and image responses stay in the run directory.
 ### 1.3 MTP, users and cache capacity
 
 Set `llama_evaluation_mode: mtp-slots-cache` for the 1/2/4-user matrix.
-It fixes 16K **per user**, FA on and unified KV on. It compares f16/f16,
+It fixes 16K **per user** and FA on. Unified KV defaults to on. It compares f16/f16,
 Q8/Q8 and Q4/Q4 caches. With three models, this gives 18 single-user
 configurations with MTP off and 72 for 2/4 users with MTP off/on. Each model
 needs `max_context`; add `draft` for a separate MTP file. An integrated MTP model
@@ -137,6 +136,58 @@ attempts intact and use a new case directory for an authorized retry.
 Use isolated builds for a new source revision and keep the service build intact.
 Quality scoring remains a separate Luna-6 step.
 
+For the HIP long-context timing check, select separate slot caches.
+Upstream documents a [unified-KV slowdown on HIP](https://github.com/ggml-org/llama.cpp/issues/28495).
+Keep total allocation equal to users × context; changing KV mode needs a new memory check.
+This correction is prepared but has not been validated on node2.
+
+```yaml
+llama_evaluation_dir: /var/tmp/llama-filled-speed-split-kv
+llama_evaluation_mode: mtp-slots-cache
+llama_evaluation_capacity_only: true  # Skip the image and 16K matrices
+llama_evaluation_kv_unified: false
+llama_evaluation_text_file: /path/to/agent-history.txt  # Real text; enough to fill the requested context
+llama_evaluation_full_context_timeout: 600  # Maximum seconds per case, including loading and cache fill
+llama_evaluation_capacity_profiles:
+  - model: gemma12-Q4_0
+    backend: hip
+    slots: 4
+    cache: q4_0
+    mtp: false
+    start_context: 131072
+    measure: filled-speed  # One context, no capacity search
+```
+
+`filled-speed` uses text only: fill each slot with saved history, then reuse that
+cache and process 512 new input tokens before generating 128 tokens. The input
+count includes turn formatting and the preceding assistant token still awaiting
+evaluation. The runner checks the reused and new token counts for every slot.
+
+A short check with 4K cached history must pass within 90 seconds before the full fill starts.
+Use `measure: cached-short` to run only that check; it never starts a full fill.
+The entire case uses `llama_evaluation_full_context_timeout`, capped at 1,800
+seconds, or stops sooner on a cache miss or request failure. The example uses
+600 seconds; the short gate stays at 90 seconds. A failed case stops the queue.
+No image or quality tests run in this mode.
+
+For approved fills that exceed that deadline, the run manifest can set
+`fill_progress: {hard_limit_seconds: 10800, stall_limit_seconds: 300}`.
+The hard limit bounds the whole case; the stall limit stops a history fill
+without advancing per-slot token counts. Both limits and per-slot progress
+are saved with the result. The 90-second short gate stays unchanged.
+A stopped fill is a timeout, not evidence of OOM. New progress-aware runs count
+TG events strictly between the latest first token and earliest last token.
+
+Cache-fill time, mean TTFT and generation speed stay separate. Streamed token
+timestamps measure TG from the latest user's first token to the earliest user's
+last token. Count only tokens received after the start of that interval, so TG
+excludes every user's prefill and first token. Requests are prepared before the
+start barrier; every user must emit tokens within the shared interval.
+Per-request timings and end-to-end throughput are saved separately. Existing
+16K `Total t/s` includes prefill and is not this TG metric.
+Capacity checks keep prompt reuse off.
+See the [server cache and streaming options](https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md).
+
 Ansible starts a background job; launch success is not test completion. Inspect
 `status-mtp.json` in MTP mode (`status.json` otherwise) and each case's
 `result.json`, including service restoration status.
@@ -187,25 +238,68 @@ python3 evaluation/build_report.py /path/to/run
 ```
 
 The builder combines saved results and judgements with `reference.json` and
-`report.template.html`, then writes `reports/report.html`. It checks that each
-judgement matches the saved answer. Missing judgements stay unscored.
+updates `reports/benchmark-data.js`. Both HTML pages read this shared dataset.
+It checks that each judgement matches the saved answer. Missing judgements stay unscored.
 Use `--patched-run /path/to/corrected-run` to include corrected results; later
 inputs replace earlier rows only for the same model/backend/cache/context/FA.
-Use `--additional-run /path/to/native-context-run` to include a new context
-matrix. Memory classes distinguish ≤8 GiB, ≤16 GiB and excluded configurations.
+The model importer accepts only the retained 16K llama-bench/image baseline.
+Server-capacity records, excluded cases and Qwen MTP-file baseline duplicates
+are not imported into this collection. Partial imports preserve unrelated results.
+Use the dedicated server import commands below.
 
 This step runs no GPU inference and makes no Luna-6 calls.
-`reports/index.html` is fully hand-maintained; the generator never writes it.
+### 3.1 Shared data
+
+[benchmark-data.js](../reports/benchmark-data.js) is the published source for both
+HTML pages. Its schema separates:
+
+- `configurations`: model and execution settings
+- `measurements`: workload-specific timings, memory, capacity and outcomes
+- `image_answers`: saved answers and reviews
+- `catalog`: references used to select and display those records, plus provenance
+
+`build_report.py` reads recorded runs and reviews into structured records.
+`report_data.py` merges records, preserves replaced attempts, resolves references
+and writes the shared dataset and BENCHMARK.md. Neither script builds or parses
+HTML. Identical answer text is shared; scores and configuration links stay separate.
+
+Both HTML pages are hand-maintained. Their JavaScript reads the shared dataset;
+imports do not rewrite page layouts or operator edits. Short prompts, Long prompts,
+llama-bench and capacity remain distinct workloads. Long cards reuse matching
+16K image scores; they do not claim long-context image quality.
+
+BENCHMARK.md is generated from the same data. To refresh only that document:
+
+```bash
+python3 evaluation/build_report.py --markdown
+```
+
+Keep condensed run files outside Git as import inputs. The shared dataset owns
+imported results; do not keep a second maintained copy in `evaluation/`. Raw
+streams and server logs also stay outside Git.
+
+### 3.2 Import results
 
 For an MTP run, save the blind judgements as `reviews-luna.json` keyed by the
-image/prompt/answer hash, then generate its tables and image-answer view:
+image/prompt/answer hash, then import its measurements and image answers:
 
 ```bash
 python3 evaluation/build_report.py --mtp-run /path/to/run
 ```
 
-This writes `reports/mtp.html` and sections 5–6 of `BENCHMARK.md`.
-The existing single-user results stay intact.
+This updates the shared dataset. Existing unrelated results stay intact.
+
+For selected one-user 16K MTP-on additions, keep `selected-status.json`,
+`before.json`, `counterparts.json`, `matched/`, the reused off summaries under
+`counterparts/`, and exact-answer Luna-6 reviews together outside Git:
+
+```bash
+python3 evaluation/build_report.py --short-run /path/to/short-run
+```
+
+This imports the recorded cache type (f16, Q8 or Q4) and checks its MTP-off
+counterpart. It merges outcomes, metrics and scored answers into the shared data.
+Earlier rows stay intact. BENCHMARK.md is regenerated automatically.
 
 For a capacity-only completion, keep `manifest.json` and `reuse.json` beside
 the copied `node2/` results. Pass/fail reports can instead use a verified
@@ -215,7 +309,24 @@ the copied `node2/` results. Pass/fail reports can instead use a verified
 python3 evaluation/build_report.py --capacity-run /path/to/capacity-completion
 ```
 
-This updates capacity sections while preserving speed tables, image answers
+This updates capacity records while preserving speed measurements, image answers
 and scores. For context searches, `reuse.json` links completed summaries and the
 manifest lists selected profiles; missing results remain pending. Combine
 `--mtp-run` and `--capacity-run` to rebuild matched and capacity sections together.
+
+For cached-context timings, keep `cached-text-results.json` in the external run
+directory, including failures and unattempted cases.
+After rebuilding any matched or capacity sections, add the cached timings:
+
+```bash
+python3 evaluation/build_report.py --cached-run /path/to/run
+```
+
+This imports timing records and refreshes matching widget values, preserving
+image scores. Original attempts and authorized reruns remain distinguishable.
+The widget uses the latest selected result; a failed fill has no continuation
+TTFT or TG. Passed Long records must include cached history, 512 new tokens,
+128 output tokens, TTFT and decode throughput. Imports reject contexts above
+the model limit. BENCHMARK.md is regenerated automatically.
+
+Remaining measurements: [pending evaluations](PENDING.md).

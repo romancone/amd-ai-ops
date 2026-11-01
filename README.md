@@ -132,7 +132,9 @@ capacity or compatibility with every training workload.
 
 - [Models](MODELS.md): descriptions, download sizes and configuration examples.
 - [Benchmarks](BENCHMARK.md): measurements and conclusions.
-- [HTML summary](reports/index.html) and [interactive results](reports/report.html): comparisons and saved image answers.
+- [Model benchmarks with real prompts](reports/index.html): timings, maximum context, GPU memory and MTP image answers
+- [Model benchmarks with llama-bench](reports/llama-bench.html): original weight variants, image scores and saved answers
+- Both pages read the same [measurement datastore](reports/benchmark-data.js)
 - [Evaluation workflow](evaluation/README.md): run benchmarks, score answers and generate reports.
 
 Published reports: [romancone.github.io/amd-ai-ops](https://romancone.github.io/amd-ai-ops/).

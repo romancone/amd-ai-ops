@@ -12,7 +12,7 @@ repository directory so the HIP patch file is available. Install `curl` with
 
 ### 1.1 Configure the model
 
-These settings match the llama role defaults and the Gemma entry in
+These settings match the Gemma profile in
 [group_vars/amd_hosts.yml](group_vars/amd_hosts.yml). For another model, replace
 the model profile below with its Bash configuration from [MODELS.md](MODELS.md).
 
@@ -35,10 +35,14 @@ export LLAMA_PORT=8080
 export LLAMA_MODEL_ID=gemma-4-12B-it-Q4_0
 export LLAMA_MODEL_REPO=ggml-org/gemma-4-12B-it-GGUF
 export LLAMA_MODEL_FILE=gemma-4-12B-it-Q4_0.gguf
-unset LLAMA_MMPROJ
-# export LLAMA_MMPROJ=mmproj-gemma-4-12B-it-BF16.gguf  # Optional images
-export LLAMA_CONTEXT=16384
+export LLAMA_DRAFT=mtp-gemma-4-12B-it-Q4_0.gguf
+export LLAMA_MMPROJ=mmproj-gemma-4-12B-it-BF16.gguf
+export LLAMA_CONTEXT=16384  # Total allocation across LLAMA_PARALLEL users
 export LLAMA_PARALLEL=1
+export LLAMA_MTP=true  # false disables MTP
+export LLAMA_DRAFT_TOKENS=3
+export LLAMA_KV_UNIFIED=true  # false uses separate slot caches
+export LLAMA_THREADS=10
 export LLAMA_BATCH=2048
 export LLAMA_UBATCH=1152
 export LLAMA_IMAGE_MIN_TOKENS=70
@@ -53,6 +57,9 @@ export LLAMA_MODEL_DIR=/opt/models/$LLAMA_MODEL_ID
 
 **Ansible:** the same Gemma profile is already selected in inventory.
 Deployment commands are in [README.md](README.md#ansible).
+For 2 or 4 users, use the settings in [MODELS.md](MODELS.md#12-ansible-configuration).
+`LLAMA_CONTEXT` is shared across `LLAMA_PARALLEL` users; the service sets an equal
+limit for each. The 16K MTP profile leaves 16,380 usable tokens per user.
 
 ### 1.2 Create the service user
 
@@ -105,7 +112,7 @@ The download command below enables high-performance mode to help download faster
 
 ### 1.4 Download the selected model
 
-Download missing model and optional BF16 projector files from the same repository.
+Download the model, matching MTP draft and BF16 projector.
 
 <!-- ops-step
 id: llama.model.prepare
@@ -126,31 +133,36 @@ kind: file
 
 ```bash { name=llama-model }
 sudo install -d -m 755 -o "$USER" "$LLAMA_MODEL_DIR"
-if [ ! -f "$LLAMA_MODEL_DIR/$LLAMA_MODEL_FILE" ]; then
-  HF_XET_HIGH_PERFORMANCE=1 hf download \
-    "$LLAMA_MODEL_REPO" \
-    "$LLAMA_MODEL_FILE" \
-    --local-dir "$LLAMA_MODEL_DIR"
-fi
-chmod 644 "$LLAMA_MODEL_DIR/$LLAMA_MODEL_FILE"
-if [ -n "${LLAMA_MMPROJ:-}" ]; then
-  if [ ! -f "$LLAMA_MODEL_DIR/$LLAMA_MMPROJ" ]; then
+for LLAMA_FILE in "$LLAMA_MODEL_FILE" "${LLAMA_MMPROJ:-}" "${LLAMA_DRAFT:-}"; do
+  if [ -z "$LLAMA_FILE" ]; then
+    continue
+  fi
+  if [ ! -f "$LLAMA_MODEL_DIR/$LLAMA_FILE" ]; then
     HF_XET_HIGH_PERFORMANCE=1 hf download \
       "$LLAMA_MODEL_REPO" \
-      "$LLAMA_MMPROJ" \
+      "$LLAMA_FILE" \
       --local-dir "$LLAMA_MODEL_DIR"
   fi
-  chmod 644 "$LLAMA_MODEL_DIR/$LLAMA_MMPROJ"
-fi
+  chmod 644 "$LLAMA_MODEL_DIR/$LLAMA_FILE"
+done
 ```
 
-To use `curl` instead, replace only the `hf download` command with this:
+Alternatively, run this cell instead of `llama-model`:
 
 ```bash { name=llama-model-curl }
 LLAMA_REPO_URL="https://huggingface.co/$LLAMA_MODEL_REPO"
-curl -fL \
-  "$LLAMA_REPO_URL/resolve/main/$LLAMA_MODEL_FILE" \
-  -o "$LLAMA_MODEL_DIR/$LLAMA_MODEL_FILE"
+sudo install -d -m 755 -o "$USER" "$LLAMA_MODEL_DIR"
+for LLAMA_FILE in "$LLAMA_MODEL_FILE" "${LLAMA_MMPROJ:-}" "${LLAMA_DRAFT:-}"; do
+  if [ -z "$LLAMA_FILE" ]; then
+    continue
+  fi
+  if [ ! -f "$LLAMA_MODEL_DIR/$LLAMA_FILE" ]; then
+    curl -fL \
+      "$LLAMA_REPO_URL/resolve/main/$LLAMA_FILE" \
+      -o "$LLAMA_MODEL_DIR/$LLAMA_FILE"
+  fi
+  chmod 644 "$LLAMA_MODEL_DIR/$LLAMA_FILE"
+done
 ```
 
 <!-- ops-step
@@ -161,11 +173,12 @@ kind: verify
 
 Optional download settings:
 
-- `revision`: add `--revision VALUE` to `hf`, or replace `main` in the curl URL.
-- `sha256`: run `echo 'EXPECTED_SHA256  /path/to/model.gguf' | sha256sum -c -`.
-  If it fails, add `--force-download` to the download command and recheck.
+- `revision`: add `--revision VALUE` to `hf`, or replace `main` in the curl URL
+- `sha256`: run `echo 'EXPECTED_SHA256  /path/to/model.gguf' | sha256sum -c -`
+  If it fails, add `--force-download` to the download command and recheck
 
-Use the same revision for both files; `mmproj_sha256` checks the projector.
+All files use the same repository and revision. `mmproj_sha256` checks the
+projector; `draft_sha256` checks the draft.
 Ansible replaces files with mismatched checksums and otherwise keeps existing
 files. To change revision, remove the old file or supply its new checksum.
 
@@ -266,6 +279,18 @@ kind: command
 
 ```bash { name=llama-service-vulkan }
 export LLAMA_BACKEND=vulkan
+LLAMA_SPEC_TYPE=none
+unset LLAMA_DRAFT_PATH
+if [ "$LLAMA_MTP" = true ]; then
+  LLAMA_SPEC_TYPE=draft-mtp
+  LLAMA_DRAFT_PATH=${LLAMA_DRAFT:+$LLAMA_MODEL_DIR/$LLAMA_DRAFT}
+fi
+LLAMA_KV_FLAG=--no-kv-unified
+unset LLAMA_KV_PER_SLOT
+if [ "$LLAMA_KV_UNIFIED" = true ]; then
+  LLAMA_KV_FLAG=--kv-unified
+  LLAMA_KV_PER_SLOT=$((LLAMA_CONTEXT / LLAMA_PARALLEL))
+fi
 sudo tee /etc/systemd/system/llama.service >/dev/null <<EOF
 [Unit]
 Description=llama.cpp - $LLAMA_MODEL_ID - $LLAMA_BACKEND
@@ -285,6 +310,12 @@ ExecStart=$LLAMA_SOURCE/build-$LLAMA_BACKEND/bin/llama-server \
   --alias $LLAMA_MODEL_ID \
   --ctx-size $LLAMA_CONTEXT \
   --parallel $LLAMA_PARALLEL \
+  $LLAMA_KV_FLAG \
+  ${LLAMA_KV_PER_SLOT:+--kv-unified-per-slot $LLAMA_KV_PER_SLOT} \
+  --no-context-shift \
+  --cache-ram 0 \
+  --ctx-checkpoints 0 \
+  --threads $LLAMA_THREADS \
   --batch-size $LLAMA_BATCH \
   --ubatch-size $LLAMA_UBATCH \
   ${LLAMA_IMAGE_MIN_TOKENS:+--image-min-tokens $LLAMA_IMAGE_MIN_TOKENS} \
@@ -293,6 +324,13 @@ ExecStart=$LLAMA_SOURCE/build-$LLAMA_BACKEND/bin/llama-server \
   --cache-type-k $LLAMA_CACHE_TYPE_K \
   --cache-type-v $LLAMA_CACHE_TYPE_V \
   --n-gpu-layers all \
+  --fit off \
+  --spec-type $LLAMA_SPEC_TYPE \
+  --spec-draft-n-max $LLAMA_DRAFT_TOKENS \
+  --spec-draft-ngl all \
+  --spec-draft-type-k $LLAMA_CACHE_TYPE_K \
+  --spec-draft-type-v $LLAMA_CACHE_TYPE_V \
+  ${LLAMA_DRAFT_PATH:+--spec-draft-model $LLAMA_DRAFT_PATH} \
   --host 127.0.0.1 \
   --port $LLAMA_PORT \
   --jinja \
@@ -314,6 +352,8 @@ sudo systemctl restart llama.service
 Wait for `/health` to return `{"status":"ok"}`, then run the remaining checks.
 The model list should show `$LLAMA_MODEL_ID`, the chat should return text, and
 the logs should show all model layers loaded onto `Vulkan0` and `flash_attn = enabled`.
+With unified KV enabled, check `kv_unified = true`. With MTP enabled, the response's
+`timings.draft_n` must be greater than zero.
 
 <!-- ops-step
 id: llama.health.verify
@@ -347,7 +387,7 @@ curl -f "http://127.0.0.1:$LLAMA_PORT/v1/models"
 curl -f \
   "http://127.0.0.1:$LLAMA_PORT/v1/chat/completions" \
   -H 'Content-Type: application/json' \
-  -d "{\"model\":\"$LLAMA_MODEL_ID\",\"messages\":[{\"role\":\"user\",\"content\":\"Say hello in one short sentence.\"}],\"temperature\":0,\"max_tokens\":32}"
+  -d "{\"model\":\"$LLAMA_MODEL_ID\",\"messages\":[{\"role\":\"user\",\"content\":\"Count from 1 to 20, one number at a time.\"}],\"temperature\":0,\"max_tokens\":32}"
 sudo journalctl \
   "_SYSTEMD_INVOCATION_ID=$(systemctl show llama.service --property=InvocationID --value)" \
   --no-pager \
@@ -442,6 +482,18 @@ kind: command
 
 ```bash { name=llama-service-hip }
 export LLAMA_BACKEND=hip
+LLAMA_SPEC_TYPE=none
+unset LLAMA_DRAFT_PATH
+if [ "$LLAMA_MTP" = true ]; then
+  LLAMA_SPEC_TYPE=draft-mtp
+  LLAMA_DRAFT_PATH=${LLAMA_DRAFT:+$LLAMA_MODEL_DIR/$LLAMA_DRAFT}
+fi
+LLAMA_KV_FLAG=--no-kv-unified
+unset LLAMA_KV_PER_SLOT
+if [ "$LLAMA_KV_UNIFIED" = true ]; then
+  LLAMA_KV_FLAG=--kv-unified
+  LLAMA_KV_PER_SLOT=$((LLAMA_CONTEXT / LLAMA_PARALLEL))
+fi
 sudo tee /etc/systemd/system/llama.service >/dev/null <<EOF
 [Unit]
 Description=llama.cpp - $LLAMA_MODEL_ID - $LLAMA_BACKEND
@@ -461,6 +513,12 @@ ExecStart=$LLAMA_SOURCE/build-$LLAMA_BACKEND/bin/llama-server \
   --alias $LLAMA_MODEL_ID \
   --ctx-size $LLAMA_CONTEXT \
   --parallel $LLAMA_PARALLEL \
+  $LLAMA_KV_FLAG \
+  ${LLAMA_KV_PER_SLOT:+--kv-unified-per-slot $LLAMA_KV_PER_SLOT} \
+  --no-context-shift \
+  --cache-ram 0 \
+  --ctx-checkpoints 0 \
+  --threads $LLAMA_THREADS \
   --batch-size $LLAMA_BATCH \
   --ubatch-size $LLAMA_UBATCH \
   ${LLAMA_IMAGE_MIN_TOKENS:+--image-min-tokens $LLAMA_IMAGE_MIN_TOKENS} \
@@ -469,6 +527,13 @@ ExecStart=$LLAMA_SOURCE/build-$LLAMA_BACKEND/bin/llama-server \
   --cache-type-k $LLAMA_CACHE_TYPE_K \
   --cache-type-v $LLAMA_CACHE_TYPE_V \
   --n-gpu-layers all \
+  --fit off \
+  --spec-type $LLAMA_SPEC_TYPE \
+  --spec-draft-n-max $LLAMA_DRAFT_TOKENS \
+  --spec-draft-ngl all \
+  --spec-draft-type-k $LLAMA_CACHE_TYPE_K \
+  --spec-draft-type-v $LLAMA_CACHE_TYPE_V \
+  ${LLAMA_DRAFT_PATH:+--spec-draft-model $LLAMA_DRAFT_PATH} \
   --host 127.0.0.1 \
   --port $LLAMA_PORT \
   --jinja \
@@ -494,9 +559,7 @@ onto `ROCm0` and `flash_attn = enabled`. To switch back to Vulkan, follow sectio
 
 ### 4.1 Describe a JPEG
 
-Uncomment `LLAMA_MMPROJ` in section 1.1, then run `llama-settings`,
-`llama-model` and your backend's service cell. For Ansible, enable `mmproj`
-in the selected catalog entry and run `ansible-playbook llama.yml --diff`.
+The profile includes the BF16 projector for images.
 Logs should show `loaded multimodal model` and `CLIP using ROCm0` or `Vulkan0`.
 For repeatable evaluation, see [evaluation/README.md](evaluation/README.md).
 

@@ -7,10 +7,16 @@
     mode: '0755'
   become: true
 
-- name: Download model and optional BF16 projector
+- name: Download model, optional BF16 projector and draft
   ansible.builtin.include_tasks: artifact.yml
   vars:
-    artifact_sha256: "{{ model.sha256 | default('') if artifact_file == model.file else model.mmproj_sha256 | default('') }}"
-  loop: "{{ [model.file] + ([model.mmproj] if model.mmproj is defined else []) }}"
+    artifact_sha256: >-
+      {{ model.sha256 | default('') if artifact_file == model.file else
+         model.mmproj_sha256 | default('') if artifact_file == (model.mmproj | default('')) else
+         model.draft_sha256 | default('') }}
+  loop: >-
+    {{ [model.file]
+       + ([model.mmproj] if model.mmproj is defined else [])
+       + ([model.draft] if model.draft is defined else []) }}
   loop_control:
     loop_var: artifact_file
