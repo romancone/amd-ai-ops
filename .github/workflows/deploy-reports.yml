@@ -42,6 +42,10 @@ jobs:
               "$html" > "$html.tmp"
             mv "$html.tmp" "$html"
           done
+          for js in "$SITE_DIR"/*.js; do
+            sed 's|\.\./media/|media/|g' "$js" > "$js.tmp"
+            mv "$js.tmp" "$js"
+          done
           test -s "$SITE_DIR/index.html"
 
       - name: Upload reports
