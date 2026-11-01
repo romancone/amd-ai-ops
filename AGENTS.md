@@ -1,6 +1,7 @@
 # Project Rules
 
 ## Scope and Review
+
 - Stay within the requested change. Do not add models, frameworks, benchmarks,
   helper scripts or extra test repetitions without a request
 - Treat review, tests, host changes, commits, pushes and merges as separate actions.
@@ -10,8 +11,7 @@
   do not mix it with previously committed or parked work
 - Keep raw run logs and temporary evidence outside the repository. Approved
   fixtures, scoring references and condensed reports may be tracked in `media/`,
-  `evaluation/` and `reports/`. Keep result tables in BENCHMARK.md.
-  Preserve earlier results and distinguish completed, failed and pending runs
+  `evaluation/` and `reports/`
 
 ## Git
 
@@ -87,7 +87,6 @@
 - Set the default SSH user to `ubuntu` in `group_vars/all.yml`
 - Keep AMD hardware and package settings in `group_vars/amd_hosts.yml` and target
   `amd_hosts`; put host-specific values in ignored host variables
-- Keep model configuration in inventory
 - Keep the model catalog independent of the inference engine. Roles must support
   the list without embedding a particular model in their defaults. Populate one
   model and use that same example throughout the manual until asked to add more
@@ -97,8 +96,6 @@
 - Roles must not contain node names or host-specific package cleanup
 - Run Ansible from the repository root and include `--diff` in every
   `ansible-playbook` example or instruction
-- Keep validation in Ansible. Run local syntax/inventory checks only when testing
-  is within the current scope; never override a user's "no tests" instruction
 - Do not add tests, embedded scripts, or recipe-rewriting helper scripts
 
 ## Compatibility and Verification
@@ -118,50 +115,58 @@
   or global library-path changes; document any necessary workaround
 - Keep package installation free of removals and driver replacements. Resolve
   existing installation conflicts separately
-- Report reboot requirements; do not reboot automatically
+- Report reboot requirements
 - A successful package installation is not GPU or workload validation
 - When tests are requested, report both requested backends and the actual model,
   cache, concurrency and relevant results. Respect the requested test combinations;
   do not silently substitute another quantization or expand the matrix
-- Keep recommendations separate from measurements. State the recommended command
-  and when to use it; never present an untested configuration as verified
+- Never present an untested configuration as verified
 - Retry HIP Flash Attention failures with FA off and retain both results.
   Quantized V caches require FA; record rejected combinations as unsupported,
   and use a clearly labelled f16/f16 fallback. Do not replace the original settings silently
 
+## Benchmark Data
+
+- Use the canonical dataset named in MAINTAINERS.md; pages and generated
+  summaries must not maintain independent measurement values
+- Keep llama-bench, server Short, server Long and capacity measurements distinct
+  Reuse a result only when its workload and relevant configuration match
+- Preserve model artifact, quantization, backend, users, context, cache,
+  FA, MTP, KV mode, build and source-attempt identity
+- Keep TTFT, prefill, decode throughput and end-to-end throughput distinct
+  Never include prefill in a value labelled decode speed
+- Distinguish measured failure, timeout, missing measurement and excluded scope
+  A timeout does not establish a memory limit
+- Preserve useful measurements and image answers during imports and migrations
+  Stored records and access through a viewer are separate requirements
+- Remove approved obsolete records at the import boundary as well as in the
+  dataset so later imports cannot restore them
+
+## Report Changes
+
+- Preserve hand-maintained pages and staged edits
+  A presentation change must not rewrite measurements or the import pipeline
+- Reuse existing controls, styles and selector order
+  Do not add sections, columns, exports or explanations beyond the requested scope
+- Keep model order stable and labels sufficient to distinguish configurations
+  Different results must not appear under identical labels
+- Selectors must distinguish unmeasured planned cases from excluded combinations
+  Automatically leave an excluded selection only when necessary
+- Keep recommendations separate from full results
+  Compare matched settings and state whether the choice favors quality,
+  speed or memory
+- Give each explanation one visible home; do not repeat it in tables,
+  footnotes, banners and tooltips
+- Keep switch labels and table headers unbroken
+  Wrap complete control groups at narrow widths without stretching buttons
+- When verification is authorized, inspect the rendered page, filters and
+  image previews; source inspection alone does not prove the UI works
+
 ## Maintainer Context
 
-Read [MAINTAINERS.md](MAINTAINERS.md) before changing recipe structure.
+Read [MAINTAINERS.md](MAINTAINERS.md) before changing recipe structure or the
+report pipeline. Keep file ownership there, not in these rules.
 
-## Temporary Internal Evidence
-
-Temporary review notes, not operator instructions or a claim of current host state.
-
-- Matrix collected on 2026-10-22: 54 configurations, 108 pp/tg cases,
-  324 benchmark samples and 216 image answers at 16K, with FA on
-- Matrix logs: `../amd-ai-ops-evidence-2026-10-22/vision-20261021T221846Z`
-- Corrected Qwen HIP logs:
-  `../amd-ai-ops-evidence-2026-10-22/qwen-fa-fix-20261022/node2/h3`
-- Service checks on 2026-10-23 passed for both backends at 16K: model identity,
-  text generation, BF16 projector placement, FA on and all 49 layers on GPU.
-  These were service checks, not new pp/tg or four-image measurements
-- Service-check logs:
-  `../amd-ai-ops-evidence-2026-10-24/session-evidence/amd-context16k-20261023`
-- External evidence index: `../amd-ai-ops-evidence-2026-10-24/README.md`
-- Q8 maximum-context results: 10 passes, 4 failures, 4 memory exclusions;
-  14 pp/tg pairs (84 samples), 52 successful image answers and 4 image errors.
-  Successful answers match the 16K answers and use the same Luna-6 scores
-- Maximum-context logs, corrected token counts and restored service state:
-  `../amd-ai-ops-evidence-2026-10-24/q8-full-context/`.
-  Token-count corrections are recorded as `validation_correction`
-
-### Parked Next-Step Evaluation
-
-Pending; do not run until explicitly requested:
-
-1. Test MTP on versus off with supported model artifacts
-2. Test 2 and 4 concurrent slots
-3. Compare unified KV cache on/off and cache capacity at those concurrency levels
-
-All 54 16K configurations and the maximum-context checks used one slot with
-`kv_unified = false`. They do not establish capacity for multiple users.
+For benchmark imports, coverage reviews and report migrations, use
+[benchmark-report-review](.agents/skills/benchmark-report-review/SKILL.md).
+Routine text and CSS edits do not need the full workflow.

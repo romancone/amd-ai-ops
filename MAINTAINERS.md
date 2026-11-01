@@ -3,15 +3,13 @@
 ## Contributors
 
 Read [AGENTS.md](AGENTS.md) for contribution rules, writing style and command
-formatting. Roles define installation and service behavior; inventory supplies
-model and host values. This file documents that implementation and maps it to
-the manual recipes.
+formatting. This file owns the repository layout, role behavior and Step Map.
 
 ## Layout and Ownership
 
 | File | Purpose |
 |---|---|
-| [AGENTS.md](AGENTS.md) | Contribution rules and temporary internal evidence pointers |
+| [AGENTS.md](AGENTS.md) | Contribution rules and review guidance |
 | [README.md](README.md) | Quick starts, compatibility, acceptance criteria and a short changelog |
 | [MODELS.md](MODELS.md) | Model descriptions, file sizes and complete Ansible/Runme profiles for every model, including the current default |
 | [BENCHMARK.md](BENCHMARK.md) | Generated benchmark summary from `reports/benchmark-data.js`; regenerate with `python3 evaluation/build_report.py --markdown` |
@@ -32,14 +30,14 @@ on its own. Keep both copies aligned with role behavior and inventory values.
 
 ## Role Behavior
 
-- `development` installs generic build/Python tools and Vulkan dependencies.
+- `development` installs generic build/Python tools and Vulkan dependencies
 - `rocm` validates the distribution driver and GPU access, installs Ubuntu HIP
   and PyTorch packages, and checks the compiler and Python environment. The
-  PyTorch preload applies only to its Python command, not the system loader.
+  PyTorch preload applies only to its Python command, not the system loader
 - `rocm_cleanup` discovers installed ROCm packages and leftover package
   configuration. It permits required UCX, UCC and Open MPI removals, rejects
   unrelated removals and driver changes, and does not run autoremove. Optional
-  file cleanup removes only explicitly selected, unowned files and empty directories.
+  file cleanup removes only explicitly selected, unowned files and empty directories
 - `model_store` installs `hf` and downloads inventory's `models` list as the SSH
   login user. Authentication belongs to that user; files remain readable by the
   service. Existing files are reused unless an optional checksum requires replacement.
@@ -48,13 +46,12 @@ on its own. Keep both copies aligned with role behavior and inventory values.
   the same repository and revision as the target model
 - `llama` creates the service user before invoking `model_store`, then builds the
   selected backend and serves the entry named by `llama_model`. Backend builds
-  use separate directories; only one localhost systemd service runs at a time.
-  Model artifacts and selection belong in inventory, not role defaults.
+  use separate directories; only one localhost systemd service runs at a time
 - `llama_evaluation` runs the requested matrix serially with supplied model paths.
   It preserves completed results and attempts to restart the service if it was
   active before the run. Workflow and scoring: [evaluation/README.md](evaluation/README.md).
   HIP FA occupancy failures get separate FA-off retries. Quantized V-cache
-  combinations rejected without FA are recorded as unsupported.
+  combinations rejected without FA are recorded as unsupported
 
 Optional `models[].mmproj` uses the model's repository and revision. Only BF16
 projector filenames are accepted; this does not inspect tensor precision.
@@ -93,8 +90,6 @@ patching in `source.yml`; the manual shows it beside the HIP build. Manual
 service cells restart immediately; Ansible restarts only on changes.
 Validation and check-mode helpers remain Ansible-only.
 
-Update roles, recipe markers and this map together.
-
 | Notebook part | Role | Operations |
 |---|---|---|
 | cleanup 1.2 Purge | rocm_cleanup | `amd.cleanup.packages.remove` |
@@ -130,5 +125,5 @@ installation, compilation, downloads and inference require a real run and an
 installed base stack.
 
 A real deployment must pass workload checks and an unchanged rerun before it is
-reported as validated. See [README acceptance criteria](README.md#compatibility-and-acceptance)
-and record results in [BENCHMARK.md](BENCHMARK.md).
+reported as validated. See [README acceptance criteria](README.md#compatibility-and-acceptance).
+Import benchmark results through the pipeline above; BENCHMARK.md is generated.
