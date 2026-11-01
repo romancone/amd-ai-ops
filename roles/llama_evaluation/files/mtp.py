@@ -334,6 +334,62 @@ def validate_wave(value, count, slots, predictions=128, cached=0, occupancy=True
     return errors
 
 
+class FillProgress:
+    def __init__(self, trial, dest, slots, target, stall_seconds):
+        self.trial, self.dest = trial, dest
+        self.target, self.stall_seconds = target, stall_seconds
+        self.tokens = [0]*slots
+        self.started = self.last_progress = time.monotonic()
+        self.expired = False
+        self.done = threading.Event()
+        self.log = (trial.dest/'server.log').open()
+        self.log.seek(0, 2)
+        self.output = (dest/'fill-progress.jsonl').open('w')
+        self.thread = threading.Thread(target=self.monitor, daemon=True)
+
+    def sample(self):
+        changed = False
+        for line in self.log.readlines():
+            match = re.search(r'id\s+(\d+).*?(?:prompt processing, n_tokens\s*=\s*|cached n_tokens\s*=\s*|stop processing: n_tokens\s*=\s*)(\d+)', line)
+            if match:
+                slot, tokens = map(int, match.groups())
+                if slot < len(self.tokens) and tokens > self.tokens[slot]:
+                    self.tokens[slot] = min(tokens, self.target)
+                    changed = True
+        if changed:
+            self.last_progress = time.monotonic()
+            self.output.write(json.dumps({'elapsed_seconds': self.last_progress-self.started,
+                                          'processed_tokens_per_slot': self.tokens,
+                                          'target_tokens_per_slot': self.target})+'\n')
+            self.output.flush()
+
+    def monitor(self):
+        while not self.done.wait(1):
+            self.sample()
+            if (time.monotonic()-self.last_progress >= self.stall_seconds
+                    and self.trial.proc.poll() is None):
+                self.expired = True
+                self.trial.proc.kill()
+                break
+
+    def __enter__(self):
+        self.thread.start()
+        return self
+
+    def __exit__(self, *_):
+        self.done.set()
+        self.thread.join()
+        self.sample()
+        self.summary = {'elapsed_seconds': time.monotonic()-self.started,
+                        'processed_tokens_per_slot': self.tokens,
+                        'target_tokens_per_slot': self.target,
+                        'stall_limit_seconds': self.stall_seconds,
+                        'stalled': self.expired}
+        save(self.dest/'fill-progress.json', self.summary)
+        self.log.close()
+        self.output.close()
+
+
 def profile(model, backend, slots, mtp, cache, context, dest, kind, repetition=0, fa='on', diagnostics=True):
     dest.mkdir(parents=True, exist_ok=True)
     cached_text = kind in ('filled-speed', 'cached-short')
@@ -375,7 +431,7 @@ def profile(model, backend, slots, mtp, cache, context, dest, kind, repetition=0
               'cache': cache, 'context_per_user': context, 'context': context*slots,
               'fa': fa, 'kv_unified': M.get('kv_unified', True),
               'kind': kind, 'errors': [], 'start_utc': now()}
-    guard = int(M.get('mtp_guard_tokens', 4)) if mtp and kind in ('capacity', 'filled-speed', 'cached-short') else 0
+    guard = int(M.get('mtp_guard_tokens', 4)) if mtp else 0
     result.update(guard_tokens_per_user=guard, allocated_context_per_user=context,
                   usable_context_per_user=context-guard)
     if kind == 'probe':
@@ -387,10 +443,16 @@ def profile(model, backend, slots, mtp, cache, context, dest, kind, repetition=0
             return result
     trial = Trial(server_args(model, backend, slots, mtp, cache, context, fa), dest)
     case_expired = threading.Event()
-    case_limit = min(M.get('full_context_timeout', 600), 1800)
+    progress_policy = M.get('fill_progress') if kind == 'filled-speed' else None
+    if progress_policy and not (1800 <= progress_policy['hard_limit_seconds'] <= 10800
+                                and 90 <= progress_policy['stall_limit_seconds'] <= 600):
+        raise ValueError('Fill progress limits must be bounded: hard 1800–10800s, stall 90–600s')
+    case_limit = progress_policy['hard_limit_seconds'] if progress_policy else min(M.get('full_context_timeout', 600), 1800)
     case_deadline = time.monotonic()+case_limit
     if cached_text:
         result['case_limit_seconds'] = case_limit
+        if progress_policy:
+            result['fill_progress_policy'] = progress_policy
     def expire_case():
         case_expired.set()
         if trial.proc and trial.proc.poll() is None:
@@ -430,7 +492,16 @@ def profile(model, backend, slots, mtp, cache, context, dest, kind, repetition=0
                         budget = deadline-time.monotonic()
                         if budget <= 0:
                             raise TimeoutError('whole-case time limit exceeded')
-                        filled = wave(warm, prefill_dir, timeout=budget)
+                        if phase == 'measurement' and progress_policy:
+                            with FillProgress(trial, prefill_dir, slots, tokens-512,
+                                              progress_policy['stall_limit_seconds']) as progress:
+                                filled = wave(warm, prefill_dir, timeout=budget)
+                            filled['fill_progress'] = progress.summary
+                            if progress.expired:
+                                case_expired.set()
+                                result['timeout_reason'] = 'history fill made no token progress within the stall limit'
+                        else:
+                            filled = wave(warm, prefill_dir, timeout=budget)
                         result[phase] = {'prefill': filled}
                         errors = validate_wave(filled, tokens-512, slots, predictions=1, occupancy=False)
                         if errors:
@@ -456,7 +527,7 @@ def profile(model, backend, slots, mtp, cache, context, dest, kind, repetition=0
                         # All prefills have finished at the latest first token. Exclude
                         # first tokens and stop before any user leaves the decode batch.
                         overlap_tokens = [sum(e['tokens'] for e in r['token_events']
-                                              if overlap_start < r['started_monotonic']+e['seconds'] <= overlap_end)
+                                              if overlap_start < r['started_monotonic']+e['seconds'] < overlap_end)
                                           for r in measured['requests']]
                         if overlap_end <= overlap_start or not all(overlap_tokens):
                             raise RuntimeError('overlapping token generation not confirmed for every user')

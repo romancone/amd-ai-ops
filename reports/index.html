@@ -2,188 +2,98 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>AMD AI Ops: model evidence</title>
-<link rel="stylesheet" href="style.css">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Model benchmarks with real prompts · AMD AI Ops</title>
+<link rel="stylesheet" href="index.css">
+<script src="benchmark-data.js"></script>
+<script src="benchmark-view.js"></script>
+<script src="index.js" defer></script>
 </head>
-<body><main>
-<nav class="report-nav" aria-label="Reports"><a href="index.html" aria-current="page">Recommendations</a><a href="report.html">Model tests</a><a href="mtp.html">MTP and users</a></nav>
-<h1>Choose a model for your home GPU</h1>
-<p>Measured on an RX 6900 XT with 16 GiB GPU memory.</p>
-<!-- recommendations:start -->
-<section id="recommendations"><h2 id="profile-comparison">1. Model comparison</h2>
-<p><strong>TTFT</strong> is the wait for the first token. <strong>Prefill</strong> is prompt-reading speed per user. <strong>Speed</strong> is answer tokens per second across all users. <strong>MTP</strong> (multi-token prediction) drafts several tokens ahead for the model to check.</p>
-<p>Each result pair shows <strong>MTP off → on</strong>. The earlier 16K Speed values include prefill; <a href="#cached-text">cached-context TG below</a> excludes it.</p>
-<div class="profile-tabs" role="group" aria-labelledby="profile-comparison">
-<input class="profile-tab" type="radio" name="profile" id="profile-one" checked>
-<label for="profile-one">1 user · 16K</label>
-<input class="profile-tab" type="radio" name="profile" id="profile-two">
-<label for="profile-two">2 users · 16K</label>
-<input class="profile-tab" type="radio" name="profile" id="profile-four">
-<label for="profile-four">4 users · 16K</label>
-<input class="profile-tab" type="radio" name="profile" id="profile-four-full">
-<label for="profile-four-full">4 users · 128K</label>
-<input class="profile-tab" type="radio" name="profile" id="profile-four-256">
-<label for="profile-four-256">4 users · 256K</label>
-<div class="table-wrap"><table><thead>
-<tr><th>Model</th><th>Backend</th><th>K/V cache</th><th>TTFT s mean</th><th>Prefill t/s/user</th><th>Prefill change</th><th>Speed t/s</th><th>Speed change</th><th>Image quality %<br>16K</th><th>Peak GPU GiB</th></tr>
-</thead>
-<tbody class="profile-rows profile-one">
-<tr><td>Gemma 12B Q4_0</td><td>Vulkan</td><td>Q8/Q8</td><td class="num">0.39 → 0.42</td><td class="num">1329.12 → 1210.40</td><td class="num change-negative">−8.9%</td><td class="num">41.43 → 71.18</td><td class="num change-positive">+71.8%</td><td class="num">95.75 → 94.25</td><td class="num">7.94 → 8.34</td></tr>
-<tr><td>Qwen 9B Q4_K_M</td><td>Vulkan</td><td>f16/f16</td><td class="num">0.34 → 0.56</td><td class="num">1517.51 → 922.89</td><td class="num change-negative">−39.2%</td><td class="num">59.53 → 67.40</td><td class="num change-positive">+13.2%</td><td class="num">92.50 → 92.00</td><td class="num">7.01 → 7.78</td></tr>
-<tr><td>Gemma E4B Q4_0</td><td>HIP</td><td>Q8/Q8</td><td class="num">0.30 → 0.34</td><td class="num">1722.05 → 1497.19</td><td class="num change-negative">−13.1%</td><td class="num">63.96 → 93.61</td><td class="num change-positive">+46.4%</td><td class="num">83.25 → 80.50</td><td class="num">4.87 → 5.05</td></tr>
-</tbody>
-<tbody class="profile-rows profile-two">
-<tr><td>Gemma 12B Q4_0</td><td>HIP</td><td>f16/f16</td><td class="num">0.76 → 0.80</td><td class="num">672.45 → 765.45</td><td class="num change-positive">+13.8%</td><td class="num">71.85 → 92.34</td><td class="num change-positive">+28.5%</td><td class="num">96.50 → 98.00</td><td class="num">9.33 → 9.77</td></tr>
-<tr><td>Qwen 9B Q4_K_M</td><td>HIP</td><td>f16/f16</td><td class="num">0.75 → 0.95</td><td class="num">845.88 → 816.49</td><td class="num change-negative">−3.5%</td><td class="num">87.49 → 76.25</td><td class="num change-negative">−12.9%</td><td class="num">95.50 → 94.00</td><td class="num">8.07 → 9.02</td></tr>
-<tr><td>Gemma E4B Q4_0</td><td>HIP</td><td>Q4/Q4</td><td class="num">0.47 → 0.53</td><td class="num">1089.09 → 1231.84</td><td class="num change-positive">+13.1%</td><td class="num">109.53 → 136.22</td><td class="num change-positive">+24.4%</td><td class="num">83.25 → 83.25</td><td class="num">4.96 → 5.23</td></tr>
-</tbody>
-<tbody class="profile-rows profile-four">
-<tr><td>Gemma 12B Q4_0</td><td>HIP</td><td>f16/f16</td><td class="num">1.62 → 1.64</td><td class="num">317.10 → 373.46</td><td class="num change-positive">+17.8%</td><td class="num">103.73 → 117.42</td><td class="num change-positive">+13.2%</td><td class="num">97.75 → 97.00</td><td class="num">10.53 → 11.05</td></tr>
-<tr><td>Qwen 9B Q4_K_M</td><td>HIP</td><td>f16/f16</td><td class="num">1.43 → 1.51</td><td class="num">358.51 → 555.36</td><td class="num change-positive">+54.9%</td><td class="num">127.61 → 100.18</td><td class="num change-negative">−21.5%</td><td class="num">94.50 → 93.25</td><td class="num">9.29 → 10.73</td></tr>
-<tr><td>Gemma E4B Q4_0</td><td>Vulkan</td><td>f16/f16</td><td class="num">0.56 → 0.63</td><td class="num">1096.73 → 1127.03</td><td class="num change-positive">+2.8%</td><td class="num">182.25 → 134.49</td><td class="num change-negative">−26.2%</td><td class="num">80.25 → 83.25</td><td class="num">5.56 → 5.80</td></tr>
-</tbody>
-<tbody class="profile-rows profile-four-full">
-<tr><td>Gemma 12B Q4_0</td><td>HIP</td><td>Q4/Q4</td><td class="num"><a href="#cached-text">See timing</a></td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">97.25 → 96.25</td><td class="num">12.36 → 14.82</td></tr>
-<tr><td>Qwen 9B Q4_K_M</td><td>HIP</td><td>Q4/Q4</td><td class="num"><a href="#cached-text">See timing</a></td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">94.25 → 93.50</td><td class="num">15.23 → <span class="failed">Fail</span></td></tr>
-<tr><td>Gemma E4B Q4_0</td><td>HIP</td><td>f16/f16</td><td class="num"><a href="#cached-text">See timing</a></td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">80.50 → 80.50</td><td class="num">13.89 → 15.14</td></tr>
-</tbody>
-<tbody class="profile-rows profile-four-256">
-<tr><td>Gemma 12B Q4_0</td><td>HIP</td><td>Q4/Q4</td><td class="num">Fail</td><td class="num">Fail</td><td class="num">Fail</td><td class="num">Fail</td><td class="num">Fail</td><td class="num">97.25 → 96.25</td><td class="num"><span class="failed">Fail</span></td></tr>
-<tr><td>Qwen 9B Q4_K_M</td><td>HIP</td><td>Q4/Q4</td><td class="num">Fail</td><td class="num">Fail</td><td class="num">Fail</td><td class="num">Fail</td><td class="num">Fail</td><td class="num">94.25 → 93.50</td><td class="num"><span class="failed">Fail</span></td></tr>
-</tbody>
-</table></div>
-<div class="profile-notes profile-one">
-<p class="small">Recommended: Gemma 12B <strong>MTP off</strong> · Qwen <strong>MTP off</strong> · E4B <strong>MTP off</strong></p>
-</div>
-<div class="profile-notes profile-two">
-<p class="small">Recommended: Gemma 12B <strong>MTP on</strong> · Qwen <strong>MTP off</strong> · E4B <strong>MTP on</strong></p>
-</div>
-<div class="profile-notes profile-four">
-<p class="small">Recommended: Gemma 12B <strong>MTP off</strong> · Qwen <strong>MTP off</strong> · E4B <strong>MTP on</strong></p>
-</div>
-<div class="profile-notes profile-four-full">
-<p class="small">The 128K memory figures above come from earlier unified-KV capacity checks; their allocation failures do not establish a failure with separate caches. <a href="#cached-text">Cached-context timing below</a> uses separate slot caches and shows each case’s status. <a href="mtp.html#context-limits">Capacity results</a></p>
-</div>
-<div class="profile-notes profile-four-256">
-<p class="small">Both models failed with MTP off and MTP on. Use <strong>128K per user</strong></p>
+<body>
+<main class="mtp" id="mtp">
+<nav class="report-nav" aria-label="Reports"><a href="index.html" aria-current="page">Model benchmarks with real prompts</a><a href="llama-bench.html">Model benchmarks with llama-bench</a></nav>
+<h1>Model benchmarks with real prompts</h1>
+<p class="sub">Measured on an RX 6900 XT with 16 GiB GPU memory.</p>
+<section id="recommendations" aria-labelledby="profile-comparison">
+<h2 id="profile-comparison">1. Model comparison</h2>
+<p><strong>TTFT</strong> is the wait for the first token. <strong>Prefill</strong> is prompt-reading speed per user. <strong>Speed</strong> is generation tokens per second across all users, excluding prefill. <strong>MTP</strong> (multi-token prediction) drafts several tokens ahead for the model to check.</p>
+<p>Image scores use matching 16K profiles. Cached-history tests use separate slot caches, 512 new tokens and 128 output tokens per user.</p>
+<p class="legend"><span><i style="background:var(--off)"></i>MTP off</span><span><i style="background:var(--on)"></i>MTP on</span><span><b class="good">Green</b> = better with MTP; <b class="bad">red</b> = worse</span></p>
+<div class="picker">
+<div><span class="seg-label">Real prompts</span><span class="seg" id="seg-workload" role="group" aria-label="Real prompts"></span></div>
+<div class="q8-control">
+<a class="seg-label" href="#image-quality" aria-describedby="q8-tooltip">Q8 cache</a>
+<span class="seg" id="include-q8" role="group" aria-label="Include Q8 cache results"><button type="button" data-q8="off" aria-pressed="true">Off</button><button type="button" data-q8="on" aria-pressed="false">On</button></span>
+<span class="q8-tooltip" id="q8-tooltip" role="tooltip">Q8 uses less memory than F16, but did not consistently improve image quality over Q4. Select “Q8 cache” to read how image quality is measured.</span>
 </div>
 </div>
-<!-- cached-text:start -->
-<section id="cached-text"><h3>Cached-context timing · four users</h3>
-<p>Original 600-second run: 8/12 passed; 12/12 attempted. HIP, four simultaneous users, FA on, separate slot caches, thinking off and BF16 projectors. Each user reuses context minus 640 cached tokens (minus another four with MTP), then processes 512 new tokens and generates 128. One measurement per case after its short protocol gate.</p>
-<p>TTFT is request submission to first token. TG counts tokens strictly after the latest first token through the earliest last token across all four users, excluding every prefill and first token. Per-user TG values follow user order. Earlier 16K Total t/s includes prefill and is a different metric. Cache fill spans the history-fill requests; end-to-end t/s includes the new-input prefill. Both exclude log writes and monitor shutdown. Short-check timings are not full-context results.</p>
-<div class="table-wrap"><table><thead>
-<tr><th>Model</th><th>Context/user</th><th>MTP</th><th>K/V cache</th><th>TTFT s mean</th><th>TG t/s/user</th><th>TG t/s aggregate</th><th>Cache fill s</th><th>End-to-end t/s</th><th>GPU spare MiB</th><th>Result</th></tr>
-</thead><tbody>
-<tr><td>Gemma 12B Q4_0</td><td>16,384</td><td>off</td><td>q4_0/q4_0</td><td>1.94</td><td>26.53 / 26.53 / 26.53 / 26.74</td><td>106.32</td><td>60.16</td><td>71.36</td><td>7405.04</td><td>passed</td></tr>
-<tr><td>Gemma 12B Q4_0</td><td>16,384</td><td>on</td><td>q4_0/q4_0</td><td>1.97</td><td>33.37 / 31.44 / 35.02 / 30.33</td><td>130.16</td><td>61.38</td><td>78.24</td><td>6832.70</td><td>passed</td></tr>
-<tr><td>Gemma E4B Q4_0</td><td>16,384</td><td>off</td><td>f16/f16</td><td>0.80</td><td>52.90 / 52.90 / 52.90 / 53.32</td><td>212.02</td><td>23.79</td><td>151.40</td><td>10218.25</td><td>passed</td></tr>
-<tr><td>Gemma E4B Q4_0</td><td>16,384</td><td>on</td><td>f16/f16</td><td>0.96</td><td>58.96 / 50.60 / 48.28 / 52.93</td><td>210.77</td><td>24.39</td><td>149.90</td><td>10090.46</td><td>passed</td></tr>
-<tr><td>Qwen 9B MTP Q4_K_M</td><td>16,384</td><td>off</td><td>q4_0/q4_0</td><td>1.42</td><td>36.17 / 35.88 / 35.88 / 36.17</td><td>144.10</td><td>45.55</td><td>96.74</td><td>8584.61</td><td>passed</td></tr>
-<tr><td>Qwen 9B MTP Q4_K_M</td><td>16,384</td><td>on</td><td>q4_0/q4_0</td><td>1.56</td><td>31.01 / 34.29 / 37.87 / 35.79</td><td>138.97</td><td>48.83</td><td>88.68</td><td>7208.02</td><td>passed</td></tr>
-<tr><td>Gemma 12B Q4_0</td><td>131,072</td><td>off</td><td>q4_0/q4_0</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>4250.12</td><td>timeout</td></tr>
-<tr><td>Gemma 12B Q4_0</td><td>131,072</td><td>on</td><td>q4_0/q4_0</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>2530.93</td><td>timeout</td></tr>
-<tr><td>Gemma E4B Q4_0</td><td>131,072</td><td>off</td><td>f16/f16</td><td>2.65</td><td>21.71 / 21.71 / 21.71 / 21.54</td><td>86.67</td><td>479.17</td><td>56.13</td><td>2798.58</td><td>passed</td></tr>
-<tr><td>Gemma E4B Q4_0</td><td>131,072</td><td>on</td><td>f16/f16</td><td>2.71</td><td>18.98 / 22.32 / 20.38 / 21.26</td><td>82.93</td><td>485.82</td><td>53.03</td><td>2419.06</td><td>passed</td></tr>
-<tr><td>Qwen 9B MTP Q4_K_M</td><td>131,072</td><td>off</td><td>q4_0/q4_0</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>2311.79</td><td>timeout</td></tr>
-<tr><td>Qwen 9B MTP Q4_K_M</td><td>131,072</td><td>on</td><td>q4_0/q4_0</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>2244.77</td><td>oom</td></tr>
-</tbody></table></div>
-<p class="small">Gemma 12B and E4B MTP-off at 16K were revalidated from saved complete streams after correcting an output-boundary flag check; neither measurement was repeated. Gemma 12B isolated post-wave health was not sampled after the original validation exception; all resident-memory samples passed. Every failed case stopped its queue for diagnosis before any remaining approved profiles were launched. No failed case was rerun. Pending means unattempted. Gemma 12B Q4_0 131072 MTP off: Whole-case timer expired during history fill before continuation measurement; no OOM, device loss or VRAM eviction. Gemma 12B Q4_0 131072 MTP on: Whole-case timer expired during history fill before continuation; incomplete MTP confirmation is a consequence of the stopped fill, not an MTP capability failure. No OOM, device loss or VRAM eviction. Qwen 9B MTP Q4_K_M 131072 MTP off: Whole-case timer expired during history fill before continuation; no OOM, device loss or VRAM eviction. Qwen 9B MTP Q4_K_M 131072 MTP on: Separate-cache MTP context creation failed allocating a 2784.33 MiB GPU compute buffer before the short gate; not a timeout. Evidence: ../amd-ai-ops-evidence-2026-10-25/cached-full-20261028. Service restoration: healthy, original active state and unit SHA256 unchanged.</p>
-<section id="cached-text-reruns"><h4>30-minute timeout reruns</h4>
-<p>3/3 reruns passed; 3/3 attempted. 11/12 configurations now have a passing measurement. Only the three original 128K timeouts were rerun with a 1,800-second whole-case limit. The 90-second short gate and all model, cache, context and workload settings stayed unchanged. The original attempts above are preserved.</p>
-<div class="table-wrap"><table><thead>
-<tr><th>Model</th><th>Context/user</th><th>MTP</th><th>K/V cache</th><th>TTFT s mean</th><th>TG t/s/user</th><th>TG t/s aggregate</th><th>Cache fill s</th><th>End-to-end t/s</th><th>GPU spare MiB</th><th>Result</th></tr>
-</thead><tbody>
-<tr><td>Gemma 12B Q4_0</td><td>131,072</td><td>off</td><td>q4_0/q4_0</td><td>7.27</td><td>10.56 / 10.48 / 10.48 / 10.48</td><td>42.01</td><td>1115.36</td><td>26.53</td><td>4251.20</td><td>passed</td></tr>
-<tr><td>Gemma 12B Q4_0</td><td>131,072</td><td>on</td><td>q4_0/q4_0</td><td>6.02</td><td>13.64 / 12.88 / 11.70 / 12.99</td><td>51.22</td><td>1126.03</td><td>29.53</td><td>2531.43</td><td>passed</td></tr>
-<tr><td>Qwen 9B MTP Q4_K_M</td><td>131,072</td><td>off</td><td>q4_0/q4_0</td><td>5.07</td><td>12.56 / 12.46 / 12.46 / 12.46</td><td>49.95</td><td>1008.10</td><td>33.69</td><td>2312.03</td><td>passed</td></tr>
-</tbody></table></div>
-<p class="small">Only the whole-case deadline changed from 600 to 1800 seconds. Original attempts, successful cases and the Qwen MTP-on OOM are preserved; no other case was rerun. Evidence: ../amd-ai-ops-evidence-2026-10-25/cached-30m-20261028. Service restoration: healthy, original active state and unit SHA256 unchanged.</p>
+<div class="note" id="note"></div>
+<div class="picker comparison-filters">
+<div><span class="seg-label">Users</span><span class="seg" id="seg-users" role="group" aria-label="Comparison users"></span></div>
+<div><span class="seg-label">Context / user</span><span class="seg" id="seg-ctx" role="group" aria-label="Comparison context"></span></div>
+<div><span class="seg-label">Backend</span><span class="seg" id="seg-backend" role="group" aria-label="Comparison backend"></span></div>
+<div><span class="seg-label">K/V cache</span><span class="seg" id="seg-cache" role="group" aria-label="Comparison cache"></span></div>
+</div>
+<div class="cards" id="cards"></div>
+<h3>MTP boost overview — all profiles</h3>
+<p class="small">Change with MTP on. Select a cell to open that profile.</p>
+<div class="picker">
+<div><span class="seg-label">Metric</span><span class="seg" id="seg-heat" role="group" aria-label="Overview metric"></span></div>
+</div>
+<div class="heat-wrap"><table class="heat" id="heat" aria-label="MTP change across profiles"></table></div>
 </section>
-</section>
-<!-- cached-text:end -->
-
+<section aria-labelledby="context-limits">
 <h2 id="context-limits">2. Users and maximum context</h2>
-<p>Maximum verified context size per user on the 16 GiB card
-using the <a href="mtp.html#context-limits">tested configurations</a>.</br>
-<p>Context size is input and output tokens per user<p>
-<p>Total context (--ctx-size) = users × (usable context + MTP reserve)</p>
-</p> Smaller contexts with the same settings use less GPU memory.</p>
-<div class="profile-tabs" role="group" aria-labelledby="context-limits">
-<input class="profile-tab" type="radio" name="context-profile" id="context-one" checked>
-<label for="context-one">1 user</label>
-<input class="profile-tab" type="radio" name="context-profile" id="context-two">
-<label for="context-two">2 users</label>
-<input class="profile-tab" type="radio" name="context-profile" id="context-four">
-<label for="context-four" id="four-user-context">4 users</label>
-<div class="table-wrap"><table><thead>
-<tr><th>Model</th><th>Model limit<br>MTP on</th><th>Backend</th><th>K/V cache</th><th>MTP</th><th>Max usable tokens/user</th></tr>
-</thead>
-<tbody class="profile-rows context-one">
-<tr><td>Gemma 12B Q4_0</td><td>262,140</td><td>HIP / Vulkan</td><td>f16/f16</td><td>on</td><td>262,140</td></tr>
-<tr><td>Gemma E4B Q4_0</td><td>131,068</td><td>HIP / Vulkan</td><td>f16/f16</td><td>on</td><td>131,068</td></tr>
-<tr><td>Qwen 9B MTP Q4_K_M</td><td>262,140</td><td>HIP</td><td>Q4/Q4</td><td>on</td><td>262,140</td></tr>
-<tr><td>Qwen 9B MTP Q4_K_M</td><td>262,140</td><td>Vulkan</td><td>f16/f16</td><td>on</td><td>131,068</td></tr>
-</tbody>
-<tbody class="profile-rows context-two">
-<tr><td>Gemma 12B Q4_0</td><td>262,140</td><td>HIP / Vulkan</td><td>Q4/Q4</td><td>on</td><td>262,140</td></tr>
-<tr><td>Gemma E4B Q4_0</td><td>131,068</td><td>HIP / Vulkan</td><td>f16/f16</td><td>off</td><td>131,072</td></tr>
-<tr><td>Qwen 9B MTP Q4_K_M</td><td>262,140</td><td>HIP / Vulkan</td><td>Q4/Q4</td><td>off</td><td>262,144</td></tr>
-</tbody>
-<tbody class="profile-rows context-four">
-<tr><td>Gemma 12B Q4_0</td><td>262,140</td><td>HIP / Vulkan</td><td>Q4/Q4</td><td>on</td><td>131,068</td></tr>
-<tr><td>Gemma E4B Q4_0</td><td>131,068</td><td>HIP</td><td>f16/f16</td><td>off</td><td>131,072</td></tr>
-<tr><td>Gemma E4B Q4_0</td><td>131,068</td><td>Vulkan</td><td>Q8/Q8</td><td>off</td><td>131,072</td></tr>
-<tr><td>Qwen 9B MTP Q4_K_M</td><td>262,140</td><td>HIP / Vulkan</td><td>Q4/Q4</td><td>off</td><td>131,072</td></tr>
-</tbody>
-</table></div>
+
+
+<div class="picker">
+<div><span class="seg-label">Users</span><span class="seg" id="seg-capacity" role="group" aria-label="Context users"></span></div>
+<div><span class="seg-label">MTP</span><span class="seg" id="seg-capacity-mtp" role="group" aria-label="Context MTP state"></span></div>
+<div><span class="seg-label">Backend</span><span class="seg" id="seg-capacity-backend" role="group" aria-label="Context backend"></span></div>
 </div>
-<h2 id="memory-requirements">3. Memory requirements</h2>
-<p>16K per user, without filling the context.</p>
-<div class="profile-tabs" role="group" aria-labelledby="memory-requirements">
-<input class="profile-tab" type="radio" name="memory-profile" id="memory-small" checked>
-<label for="memory-small">&lt;&lt;8 GiB</label>
-<input class="profile-tab" type="radio" name="memory-profile" id="memory-eight">
-<label for="memory-eight">8 GiB</label>
-<input class="profile-tab" type="radio" name="memory-profile" id="memory-sixteen">
-<label for="memory-sixteen">16 GiB</label>
-<div class="table-wrap"><table><thead><tr><th>Choice</th><th>Users</th><th>MTP</th><th>Peak GPU GiB</th></tr></thead>
-<tbody class="profile-rows memory-small">
-<tr><td>Gemma E4B / HIP / Q8/Q8</td><td>1</td><td>Off</td><td>4.87</td></tr>
-<tr><td>Gemma E4B / HIP / Q4/Q4</td><td>2</td><td>On</td><td>5.23</td></tr>
-<tr><td>Gemma E4B / Vulkan / f16/f16</td><td>4</td><td>On</td><td>5.80</td></tr>
-</tbody>
-<tbody class="profile-rows memory-eight">
-<tr><td>Qwen / Vulkan / f16/f16</td><td>1</td><td>Off</td><td>7.01</td></tr>
-<tr><td>Qwen / Vulkan / f16/f16</td><td>1</td><td>On</td><td>7.78</td></tr>
-<tr><td>Gemma 12B / Vulkan / Q8/Q8</td><td>1</td><td>Off</td><td>7.94</td></tr>
-</tbody>
-<tbody class="profile-rows memory-sixteen">
-<tr><td>Gemma 12B / HIP / f16/f16</td><td>2</td><td>On</td><td>9.77</td></tr>
-<tr><td>Gemma 12B / HIP / f16/f16</td><td>4</td><td>Off</td><td>10.53</td></tr>
-<tr><td>Qwen / HIP / f16/f16</td><td>2</td><td>Off</td><td>8.07</td></tr>
-<tr><td>Qwen / HIP / f16/f16</td><td>4</td><td>Off</td><td>9.29</td></tr>
-</tbody></table></div>
-</div>
-<p class="small">8 GiB cards were not tested. Leave room for desktop apps.</p>
-<p class="small"><strong>Above 16 GiB:</strong> estimated memory exclusions include Qwen and Gemma 12B Q8 weights with f16 cache at 256K.</p>
+<div class="note">Maximum context: input + output tokens per user on the 16 GiB GPU. Total <code>--ctx-size</code> = users × (usable context + 4 tokens with MTP on). Smaller contexts leave more GPU memory free. </div>
+<div class="heat-wrap"><table class="heat capacity-table" id="context-table" aria-label="Maximum context by model"></table></div>
 </section>
-<!-- recommendations:end -->
-<h2>4. Q4 vs Q8 vs F16 cache</h2>
-<p>Smaller caches leave more GPU memory for longer conversations. f16 uses the most memory, Q8 less and Q4 the least. Model weights stay Q4.</p>
-<p><strong>Higher cache precision did not consistently improve image quality.</strong> Choose a measured profile from section 1; use section 2 to check how much context fits. <a href="mtp.html">All cache results</a></p>
-<p class="small"><strong>Compare in Codex:</strong> select Luna-6 (<code>gpt-6-luna</code>). Hide model names and score saved answers using the same images, reference answers and <a href="../evaluation/README.md#image-description-quality">scoring guide</a>.</p>
-<h2>5. MTP image-score breakdown</h2>
-<p><a href="../BENCHMARK.md#one-user-image-quality">One-user image quality: Gemma and Qwen</a></p>
-<details><summary>Gemma 12B, two users, HIP, Q4/Q4</summary>
-<div class="table-wrap"><table><thead><tr><th>Image</th><th>MTP off</th><th>MTP on</th><th>Change</th></tr></thead><tbody>
-<tr><td>Great Wall</td><td>95</td><td>95</td><td>No change</td></tr>
-<tr><td>Singapore</td><td>95</td><td>97</td><td>+2 points</td></tr>
-<tr><td>Titanic</td><td>97</td><td>97</td><td>No change</td></tr>
-<tr><td>Pizza</td><td>99</td><td>98</td><td>−1 points</td></tr>
-<tr><th>Mean</th><td>96.50</td><td><strong>96.75</strong></td><td>+0.25 points</td></tr>
-</tbody></table></div>
+<section aria-labelledby="memory-requirements">
+<h2 id="memory-requirements">3. Memory requirements</h2>
+
+
+<div class="picker">
+<div><span class="seg-label">GPU memory</span><span class="seg" id="seg-memory" role="group" aria-label="Memory budget"></span></div>
+</div>
+<div class="note" id="memory-note"></div>
+<div class="picker comparison-filters three-filters">
+<div><span class="seg-label">Users</span><span class="seg" id="seg-memory-users" role="group" aria-label="Memory users"></span></div>
+<div><span class="seg-label">MTP</span><span class="seg" id="seg-memory-mtp" role="group" aria-label="Memory MTP state"></span></div>
+<div><span class="seg-label">Backend</span><span class="seg" id="seg-memory-backend" role="group" aria-label="Memory backend"></span></div>
+</div>
+<div class="cards" id="memory-cards"></div>
+<p class="small">8 GiB cards were not tested; leave room for desktop apps. <a href="benchmark-data.js">Measurement data</a></p>
+</section>
+<noscript><p>Enable JavaScript to use the selectors, or read the <a href="../BENCHMARK.md">benchmark tables</a>.</p></noscript>
+
+<h2 id="image-quality">4. Image quality measurement</h2>
+<p>Each profile answers the same four image questions at 16K context: identify the Great Wall, locate Singapore landmarks, explain a Titanic scene and describe pizza ingredients.</p>
+<p><strong>Luna-6 (<code>gpt-6-luna</code>)</strong> scores saved answers against the images and fixed reference answers, with model names and settings hidden. The reference answers define 100% for this comparison.</p>
+<ul>
+<li>Factual accuracy: 40 points</li>
+<li>Visible details and relationships: 30 points</li>
+<li>Completion of the image task: 20 points</li>
+<li>Clear, concise wording: 10 points</li>
+</ul>
+<p>The displayed quality is the mean of the four image scores. MTP off and on are scored separately. Keyword coverage does not count toward quality; failed image requests remain unscored. These four tasks do not measure overall model accuracy or long-context image quality.</p>
+<p><a href="#saved-image-answers">MTP image answers</a> · <a href="llama-bench.html">Model benchmarks with llama-bench</a> · <a href="../evaluation/README.md#2-luna-6-quality-scoring">Scoring method</a></p>
+<details id="saved-image-answers">
+<summary>Saved MTP image answers</summary>
+<p class="small">Filter by model, backend or configuration. Each answer includes its score and review.</p>
+<label>Configuration <input id="answer-filter" type="search" placeholder="e.g. gemma12-Q4_0-hip-n2"></label>
+<label>Answer <select id="answer-select" aria-label="Saved image answer"></select></label>
+<div id="answer-view"></div>
+<details id="image-reference"><summary>Luna-6 reference</summary><p></p></details>
 </details>
 <footer class="doc-links"><a href="../README.md">Repository guide</a><a href="../MODELS.md">Model settings</a><a href="../llama.md">Installation / Runme</a><a href="../BENCHMARK.md">Benchmark tables</a><a href="../evaluation/README.md">How tests are scored</a></footer>
-</main></body></html>
+
+
+</main>
+</body>
+</html>

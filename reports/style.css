@@ -15,7 +15,7 @@ a:focus-visible, button:focus-visible, select:focus-visible { outline: 2px solid
 table { width: 100%; border-collapse: collapse; font-size: .9rem; }
 caption { text-align: left; padding: 16px; font-weight: 650; }
 th, td { padding: 14px 12px; border-top: 1px solid #dce2e9; text-align: left; }
-th { background: #e9eff5; }
+th { background: #e9eff5; white-space: nowrap; }
 .num { white-space: nowrap; font-variant-numeric: tabular-nums; }
 .change-positive { color: #216341; }
 .change-negative { color: #a32622; }
@@ -30,7 +30,10 @@ th { background: #e9eff5; }
 .profile-tabs .profile-notes { display: none; }
 #profile-one:checked ~ .table-wrap .profile-one,
 #profile-two:checked ~ .table-wrap .profile-two,
+#profile-two-64:checked ~ .table-wrap .profile-two-64,
+#profile-two-128:checked ~ .table-wrap .profile-two-128,
 #profile-four:checked ~ .table-wrap .profile-four,
+#profile-four-64:checked ~ .table-wrap .profile-four-64,
 #profile-four-full:checked ~ .table-wrap .profile-four-full,
 #profile-four-256:checked ~ .table-wrap .profile-four-256,
 #context-one:checked ~ .table-wrap .context-one,
@@ -41,7 +44,10 @@ th { background: #e9eff5; }
 #memory-sixteen:checked ~ .table-wrap .memory-sixteen { visibility: visible; }
 #profile-one:checked ~ .profile-one,
 #profile-two:checked ~ .profile-two,
+#profile-two-64:checked ~ .profile-two-64,
+#profile-two-128:checked ~ .profile-two-128,
 #profile-four:checked ~ .profile-four,
+#profile-four-64:checked ~ .profile-four-64,
 #profile-four-full:checked ~ .profile-four-full,
 #profile-four-256:checked ~ .profile-four-256 { display: block; }
 .notes { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 16px; }

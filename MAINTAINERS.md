@@ -14,9 +14,9 @@ the manual recipes.
 | [AGENTS.md](AGENTS.md) | Contribution rules and temporary internal evidence pointers |
 | [README.md](README.md) | Quick starts, compatibility, acceptance criteria and a short changelog |
 | [MODELS.md](MODELS.md) | Model descriptions, file sizes and complete Ansible/Runme profiles for every model, including the current default |
-| [BENCHMARK.md](BENCHMARK.md) | Measured settings, results, comparisons, conclusions and limitations |
-| [reports/](reports/) | Hand-maintained `index.html` owns recommendations; generated `report.html` owns model-test details and `mtp.html` owns MTP/users and context-capacity details. All three share navigation and `style.css` |
-| [evaluation/](evaluation/) / [evaluation.yml](evaluation.yml) | Evaluation runner, scoring inputs and report-generation sources; HTML output lives in `reports/`, raw logs stay outside the repository |
+| [BENCHMARK.md](BENCHMARK.md) | Generated benchmark summary from `reports/benchmark-data.js`; regenerate with `python3 evaluation/build_report.py --markdown` |
+| [reports/](reports/) | `benchmark-data.js` owns configurations, measurements and image answers; catalog entries reference those records. Imports retain prior attempts; model aliases share stable selection keys. `benchmark-view.js` resolves references for both pages. `index.html` owns the comparison widget, capacity picks and MTP image viewer; `llama-bench.html` displays model benchmarks and saved image answers. `index.css` styles both pages |
+| [evaluation/](evaluation/) / [evaluation.yml](evaluation.yml) | Evaluation runner, scoring inputs and structured importers; `build_report.py` imports results, `report_data.py` merges/stores records and exports BENCHMARK.md. HTML pages are hand-maintained; raw logs stay outside the repository |
 | [cleanup.md](cleanup.md) / [cleanup.yml](cleanup.yml) | Optional ROCm cleanup |
 | [rocm.md](rocm.md) / [site.yml](site.yml) | Generic development tools, then AMD libraries |
 | [llama.md](llama.md) / [llama.yml](llama.yml) | Current default model recipe and role entry point; alternatives link to MODELS.md |
