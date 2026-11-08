@@ -545,4 +545,31 @@ def write_benchmark(repo, data=None):
     out.append(table(['Measurement','Value'],flatten(data.get('repeats',{}))))
     out += ['## 6. Saved image answers',
             'All answers, individual scores and Luna-6 references are available in the two linked reports and the shared dataset. Identical text is stored once; configuration links and reviews are retained.']
+    strata = data.get('strata')
+    if strata:
+        out += ['## 7. Strata coding benchmark',
+                '[Strata model benchmarks](reports/strata.html)', strata['hardware']]
+        published = [r for r in strata['results'] if r.get('status') == 'verified']
+        if published:
+            short_runs = published.copy()
+            q4 = strata.get('iq3_coding_kv')
+            if q4:
+                index = next((i + 1 for i, r in enumerate(short_runs) if r['quant'] == q4['quant']), len(short_runs))
+                short_runs.insert(index, q4)
+            out += ['Short coding prompt, one active request per run. TTFT is the wait for the first token. Decode includes reasoning and answer tokens and excludes prompt processing.',
+                    table(['Quant','KV cache','Experts','TTFT s','Answer starts s','Decode t/s','RAM GiB','GPU GiB','Program'],
+                          [[r['quant'],r.get('kv', strata['settings']['kv']),r['placement'],r['generation']['ttft_seconds'],
+                            r['generation']['first_content_seconds'],r['generation']['tokens_per_second'],
+                            r['peak_ram_bytes']/2**30,r['peak_gpu_bytes']/2**30 if r.get('peak_gpu_bytes') is not None else None,
+                            'Verified repair' if r['program_status'] == 'repaired' else 'Verified original']
+                           for r in short_runs]),
+                    strata.get('validation_note',''),
+                    'IQ4 required SSD expert reads and is included as a speed reference.']
+            coding = strata.get('iq3_long_coding')
+            if coding:
+                out += [f"**Near-256K coding check.** {coding['quant']}, one slot, the same {coding['input_tokens']:,}-token input for each cache. Results are for the original programs.",
+                        table(['KV cache','Result','Finding'], [[r['kv'],r['verdict'],r['finding']] for r in coding['results']]),
+                        '[Two-user capacity and serving profile](reports/strata.html#two-user-capacity)']
+        else:
+            out.append('Corrected evaluation pending; earlier runs are diagnostic.')
     (repo/'BENCHMARK.md').write_text('\n\n'.join(v for v in out if v)+'\n')

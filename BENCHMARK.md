@@ -452,3 +452,32 @@ Separate repeated image checks; these do not replace the single-answer scores ab
 ## 6. Saved image answers
 
 All answers, individual scores and Luna-6 references are available in the two linked reports and the shared dataset. Identical text is stored once; configuration links and reviews are retained.
+
+## 7. Strata coding benchmark
+
+[Strata model benchmarks](reports/strata.html)
+
+RX 6900 XT · 16 GiB VRAM · 61.31 GiB system RAM
+
+Short coding prompt, one active request per run. TTFT is the wait for the first token. Decode includes reasoning and answer tokens and excludes prompt processing.
+
+| Quant | KV cache | Experts | TTFT s | Answer starts s | Decode t/s | RAM GiB | GPU GiB | Program |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| IQ2_XS | INT8 | Resident RAM: 30.4 GiB | 2.77 | 751.58 | 45.00 | 36.39 | 14.96 | Verified repair |
+| IQ3_XXS | INT8 | Resident RAM: 37.5 GiB | 3.37 | 956.49 | 36.40 | 44.46 | 14.99 | Verified repair |
+| IQ3_S | INT8 | Resident RAM: 44.8 GiB | 4.00 | 1056.88 | 32.50 | 46.83 | 15.00 | Verified repair |
+| IQ3_S | q4_0 | Resident RAM: 46.5 GiB | 4.19 | 1359.02 | 27.30 | 49.47 | Not recorded | Verified repair |
+| UD-IQ4_XS | INT8 | Resident RAM: 36.0 GiB, SSD: 11.8 GiB | 8.69 | 6915.98 | 3.80 | 50.00 | 14.93 | Verified repair |
+
+Checks compare GPU busy, VRAM and temperature with kernel readings. Separate compute-core utilization and measured memory bandwidth were unavailable.
+
+IQ4 required SSD expert reads and is included as a speed reference.
+
+**Near-256K coding check.** IQ3_S, one slot, the same 245,625-token input for each cache. Results are for the original programs.
+
+| KV cache | Result | Finding |
+| --- | --- | --- |
+| int8 | Fail | The program started, but a missing Prometheus argument broke every metrics request. |
+| q4_0 | Pass | All four GPU readings matched across five scrapes. The program omitted unsupported counters. |
+
+[Two-user capacity and serving profile](reports/strata.html#two-user-capacity)

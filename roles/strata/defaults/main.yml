@@ -1,0 +1,25 @@
+---
+strata_version: HEAD
+strata_repo: https://github.com/Niko1221/Strata.git
+strata_backend: hip
+strata_user: strata
+strata_home: /var/lib/strata
+strata_source: /opt/strata
+strata_data: /opt/strata-data
+strata_verify_restored_weights: false
+strata_models: ["{{ strata_default_model }}"]
+strata_default_model: IQ3_S
+strata_context: 262144
+strata_parallel: 2  # Single-slot alternative: 1
+strata_conversation_cache_mib: 2048
+strata_output_tokens: 16384
+strata_vram_reserve_mib: 1024
+strata_q4_resident_budget_gib: 36
+strata_os_reserve_gib: 10
+strata_memory_limit_mib: "{{ (ansible_facts.memtotal_mb | int) - (strata_os_reserve_gib | int) * 1024 }}"
+strata_min_available_mb: 46000
+strata_min_disk_gb: 350
+strata_setup_timeout: 86400
+strata_start_service: true
+strata_enable_trim: false
+strata_nvme_devices: []

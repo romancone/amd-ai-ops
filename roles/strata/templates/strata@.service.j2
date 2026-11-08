@@ -1,0 +1,27 @@
+[Unit]
+Description=Strata local inference (%i)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=${strata_user}
+Group=${strata_user}
+SupplementaryGroups=render video
+Environment=HOME=${strata_home}
+WorkingDirectory=${strata_source}
+ExecStart=${strata_source}/.venv/bin/python serve/server.py --engine strata --config ${strata_source}/strata-%i.json --host 127.0.0.1 --port 8080
+KillMode=control-group
+TimeoutStopSec=60
+MemoryAccounting=true
+MemoryMax=${strata_memory_limit_mib}M
+MemorySwapMax=0
+OOMPolicy=stop
+LimitMEMLOCK=infinity
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

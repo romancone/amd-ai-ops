@@ -1,0 +1,117 @@
+---
+- name: Select model preparation settings
+  ansible.builtin.set_fact:
+    strata_tag: "{{ ('unsloth-' if strata_quant == 'UD-IQ4_XS' else '') ~ (strata_quant | lower) }}"
+    strata_model_kv: "{{ strata_kv | default('q4_0' if strata_quant == 'IQ3_S' else 'int8') }}"
+    strata_serving_args: "{{ ['--parallel', strata_parallel | string, '--mtp', 'on'] if strata_quant == 'IQ3_S' else [] }}"
+    strata_memory_args: >-
+      {{ ['--low-ram', 'auto', '--resident-budget-gib', strata_q4_resident_budget_gib | string]
+         if strata_quant == 'UD-IQ4_XS' else
+         ['--low-ram', 'resident'] + (['--kv-streaming', 'off'] if strata_quant == 'IQ3_S' else []) }}
+
+- name: Identify the requested build and model settings
+  ansible.builtin.set_fact:
+    strata_config: '{{ strata_source }}/strata-{{ strata_tag }}.json'
+    strata_stamp: '{{ strata_source }}/.install-{{ strata_tag }}.sha256'
+    # Fingerprint the source revision and upstream setup arguments
+    strata_signature: >-
+      {{ (([strata_checkout.after, strata_backend, strata_quant, strata_data, strata_context | string,
+            strata_model_kv, strata_vram_reserve_mib | string] + strata_memory_args + strata_serving_args) | join('\u0000')
+          ~ '\u0000') | hash('sha256') }}
+
+- name: Inspect prepared config
+  ansible.builtin.stat:
+    path: '{{ strata_config }}'
+  register: strata_prepared
+
+- name: Read preparation record
+  ansible.builtin.slurp:
+    src: '{{ strata_stamp }}'
+  register: strata_record
+  failed_when: false
+
+- name: Prepare changed weights or build settings
+  when: not strata_prepared.stat.exists or (strata_record.content | default('') | b64decode | trim).split() | first | default('') != strata_signature
+  block:
+    - name: Stop running Strata services before rebuilding
+      ansible.builtin.command: systemctl stop 'strata@*.service'
+      when: not ansible_check_mode
+
+    - name: Check available build memory and disk space
+      ansible.builtin.shell: |
+        set -eu
+        test "$(awk '/MemAvailable:/ {print int($2/1024)}' /proc/meminfo)" -ge {{ strata_min_available_mb | int }}
+        test "$(df -BG --output=avail {{ strata_data | quote }} | tail -1 | tr -dc '0-9')" -ge {{ strata_min_disk_gb | int }}
+      changed_when: false
+
+    - name: strata.prepare | Build Strata and prepare model weights
+      ansible.builtin.command:
+        argv: >-
+          {{ ['systemd-run', '--wait', '--pipe', '--collect', '--unit=strata-prepare-' ~ (strata_quant | lower),
+              '--uid=' ~ strata_user, '--gid=' ~ strata_user, '--working-directory=' ~ strata_source,
+              '--setenv=HOME=' ~ strata_home, '--setenv=PYTHONUNBUFFERED=1',
+              '--property=MemoryMax=' ~ strata_memory_limit_mib ~ 'M', '--property=MemorySwapMax=0',
+              '--property=LimitMEMLOCK=infinity', '--property=RuntimeMaxSec=' ~ strata_setup_timeout,
+              '--property=SupplementaryGroups=render video', strata_source ~ '/setup.sh',
+              '--setup', '--build', '--yes', '--no-start', '--no-browser', '--source', 'huggingface',
+              '--family', 'unsloth' if strata_quant == 'UD-IQ4_XS' else 'qwen', '--model', strata_quant,
+              '--backend', strata_backend, '--data-dir', strata_data, '--context', strata_context | string,
+              '--kv', strata_model_kv, '--vram-reserve-mib', strata_vram_reserve_mib | string,
+              '--vision', 'no', '--host', '127.0.0.1', '--port', '8080'] + strata_memory_args + strata_serving_args }}
+      register: strata_build
+      async: '{{ strata_setup_timeout }}'
+      poll: 15
+      when: not ansible_check_mode
+
+- name: Read prepared model configuration
+  ansible.builtin.slurp:
+    src: '{{ strata_config }}'
+  register: strata_config_file
+  when: not ansible_check_mode or strata_prepared.stat.exists
+
+- name: Check the configured engine binary
+  ansible.builtin.stat:
+    path: "{{ (strata_config_file.content | b64decode | from_json).exe }}"
+    get_checksum: false
+  become_user: '{{ strata_user }}'
+  register: strata_engine
+  failed_when: not (strata_engine.stat.isreg | default(false) and strata_engine.stat.executable | default(false))
+  when: not ansible_check_mode
+
+- name: Validate prepared engine options
+  vars:
+    config: "{{ strata_config_file.content | b64decode | from_json }}"
+    flags: "{{ config.args }}"
+  ansible.builtin.assert:
+    that:
+      - config.model_name == 'qwen3.8-flash-next-' ~ strata_tag
+      - config.host | default('127.0.0.1') == '127.0.0.1'
+      - flags[flags.index('--kv') + 1] == strata_model_kv
+      - flags[flags.index('--max-context') + 1] | int == strata_context | int
+      - >-
+        (flags[flags.index('--resident-budget-gib') + 1] | float == strata_q4_resident_budget_gib | float)
+        if strata_quant == 'UD-IQ4_XS' else
+        ('--resident-experts' in flags and '--resident-budget-gib' not in flags)
+      - strata_quant != 'IQ3_S' or (config.parallel | default(1) | int == strata_parallel | int and config.mtp | default(true) | bool)
+  when: not ansible_check_mode
+
+- name: Configure IQ3_S conversation cache and output budget
+  ansible.builtin.include_tasks: serving.yml
+  when: strata_quant == 'IQ3_S' and not ansible_check_mode
+
+- name: Verify restored shards against the upstream manifest
+  ansible.builtin.script:
+    cmd: "verify_model.py {{ strata_config }} {{ strata_source }}/setup.py {{ strata_quant }}"
+    executable: /usr/bin/python3
+  become_user: '{{ strata_user }}'
+  register: strata_integrity
+  changed_when: (strata_integrity.stdout | from_json).hashed_count | int > 0
+  when: strata_verify_restored_weights | bool and not ansible_check_mode
+
+- name: Record successful preparation
+  ansible.builtin.copy:
+    content: "{{ strata_signature }}  -\n"
+    dest: '{{ strata_stamp }}'
+    owner: '{{ strata_user }}'
+    mode: '0644'
+  when: strata_build is changed
