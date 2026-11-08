@@ -152,6 +152,8 @@ See [AGENTS.md](AGENTS.md) and [MAINTAINERS.md](MAINTAINERS.md).
 
 ## Changelog
 
+- **2026-11-08** — Deployed Strata IQ3_S with two 256K slots and published the [benchmark report](https://romancone.github.io/amd-ai-ops/strata.html) ([091e545](https://github.com/romancone/amd-ai-ops/commit/091e545))
+
 ### 2026-10-25 — Q8 model evaluation
 
 - Add optional full-context checks and GPU memory limits to evaluation.
