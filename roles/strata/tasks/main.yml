@@ -1,0 +1,198 @@
+---
+- name: strata.settings | Validate deployment settings
+  ansible.builtin.assert:
+    that:
+      - ansible_facts.system == 'Linux'
+      - ansible_facts.distribution == 'Ubuntu'
+      - ansible_facts.architecture == 'x86_64'
+      - strata_os_reserve_gib | int > 0
+      - strata_memory_limit_mib | int >= strata_min_available_mb | int
+      - strata_backend in ['cuda', 'hip']
+      - strata_user is match('^[a-z_][a-z0-9_-]*$')
+      - strata_user != 'root'
+      - strata_min_available_mb | int > 0
+      - strata_min_disk_gb | int > 0
+      - strata_version is string and strata_version | length > 0
+      - strata_models | length > 0
+      - strata_models | difference(['IQ2_XS', 'IQ3_XXS', 'IQ3_S', 'UD-IQ4_XS']) | length == 0
+      - strata_default_model in strata_models
+      - strata_kv | default('q4_0') in ['int8', 'k8v4', 'q4_0']
+      - strata_parallel | int in [1, 2]
+      - strata_context | int >= 16384
+      - strata_context | int <= 262144
+      - strata_conversation_cache_mib | int > 0
+      - 0 < strata_output_tokens | int < strata_context | int
+      - strata_vram_reserve_mib | int >= 700
+      - strata_q4_resident_budget_gib | int > 0
+      - "'UD-IQ4_XS' not in strata_models or (strata_q4_resident_budget_gib | int) * 1024 < (strata_memory_limit_mib | int)"
+      - strata_nvme_devices | select('match', '^nvme[0-9]+n[0-9]+$') | list | length == strata_nvme_devices | length
+      - strata_source is match('^/[A-Za-z0-9_/-]+$')
+      - strata_data is match('^/[A-Za-z0-9_/-]+$')
+      - strata_home is match('^/[A-Za-z0-9_/-]+$')
+
+- name: strata.packages | Install Strata prerequisites
+  ansible.builtin.apt:
+    name: [acl, build-essential, git, ca-certificates, curl, cmake, ninja-build, python3, python3-venv, python3-dev, pciutils, util-linux]
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: strata.hardware | Inspect GPU devices
+  ansible.builtin.command: lspci -nn
+  register: strata_pci
+  failed_when: strata_pci.rc != 0 and not ansible_check_mode
+  changed_when: false
+  check_mode: false
+
+- name: strata.hardware.require | Require the selected GPU vendor and sufficient host RAM
+  ansible.builtin.assert:
+    that:
+      - "('NVIDIA' in strata_pci.stdout) if strata_backend == 'cuda' else ('AMD/ATI' in strata_pci.stdout)"
+  when: not ansible_check_mode or strata_pci.rc == 0
+
+- name: strata.trim | Enable periodic SSD trim when requested
+  ansible.builtin.systemd_service:
+    name: fstrim.timer
+    enabled: true
+    state: started
+  when: strata_enable_trim | bool
+
+- name: strata.nvme.validate | Require nonrotating NVMe devices offering the none scheduler
+  ansible.builtin.shell: |
+    test "$(cat /sys/block/{{ item }}/queue/rotational)" = 0
+    grep -qw none /sys/block/{{ item }}/queue/scheduler
+  loop: '{{ strata_nvme_devices }}'
+  changed_when: false
+  check_mode: false
+
+- name: strata.nvme | Install explicitly selected NVMe scheduler rules
+  ansible.builtin.template:
+    src: nvme.rules.j2
+    dest: /etc/udev/rules.d/70-strata-nvme.rules
+    mode: '0644'
+  when: strata_nvme_devices | length > 0
+  register: strata_nvme_rule
+
+- name: strata.nvme.reload | Reload scheduler rules for the next device event
+  ansible.builtin.command: udevadm control --reload-rules
+  when: strata_nvme_rule is changed and not ansible_check_mode
+
+- name: Create the Strata account
+  ansible.builtin.user:
+    name: '{{ strata_user }}'
+    system: true
+    home: '{{ strata_home }}'
+    shell: /usr/sbin/nologin
+    groups: "{{ 'render,video' if strata_backend == 'hip' else 'video' }}"
+    append: true
+  register: strata_account
+
+- name: Create installation directories
+  ansible.builtin.file:
+    path: '{{ item }}'
+    state: directory
+    owner: '{{ strata_user }}'
+    group: '{{ strata_user }}'
+  loop: ['{{ strata_source }}', '{{ strata_data }}']
+
+- name: strata.source | Check out Strata and its submodules
+  ansible.builtin.git:
+    repo: '{{ strata_repo }}'
+    dest: '{{ strata_source }}'
+    version: '{{ strata_version }}'
+    recursive: true
+  become_user: '{{ strata_user }}'
+  register: strata_checkout
+  when: not (ansible_check_mode and strata_account is changed)
+
+- name: Prepare selected models
+  ansible.builtin.include_tasks: model.yml
+  loop: '{{ strata_models }}'
+  loop_control:
+    loop_var: strata_quant
+  when: strata_checkout.after is defined
+
+- name: Check for a previously prepared Q4 model
+  ansible.builtin.stat:
+    path: '{{ strata_source }}/strata-unsloth-ud-iq4_xs.json'
+  register: strata_q4_config
+
+- name: Use the upstream filename for the Q4 instance
+  ansible.builtin.file:
+    src: strata-unsloth-ud-iq4_xs.json
+    dest: '{{ strata_source }}/strata-ud-iq4_xs.json'
+    state: link
+    force: true
+  when: strata_q4_config.stat.exists
+
+- name: strata.service | Install the Strata service
+  ansible.builtin.template:
+    src: strata@.service.j2
+    dest: /etc/systemd/system/strata@.service
+    variable_start_string: '${'
+    variable_end_string: '}'
+    mode: '0644'
+  register: strata_unit
+  notify: Restart selected Strata instance
+
+- name: Reload updated unit definitions
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+  when: strata_unit is changed
+
+- name: Stop other Strata instances
+  ansible.builtin.systemd_service:
+    name: 'strata@{{ item | lower }}'
+    state: stopped
+    enabled: false
+  loop: "{{ ['IQ3_S', 'IQ3_XXS', 'IQ2_XS', 'UD-IQ4_XS'] | difference([strata_default_model]) }}"
+  when: strata_start_service | bool and not ansible_check_mode
+
+- name: Apply pending service changes
+  ansible.builtin.meta: flush_handlers
+
+- name: Start the selected Strata instance at boot
+  ansible.builtin.systemd_service:
+    name: 'strata@{{ strata_default_model | lower }}'
+    enabled: true
+    state: started
+  when: strata_start_service | bool and not ansible_check_mode
+
+- name: strata.verify | Verify local API readiness
+  ansible.builtin.uri:
+    url: http://127.0.0.1:8080/v1/models
+    return_content: true
+  register: strata_ready
+  until: >-
+    strata_ready.status == 200 and
+    (strata_ready.json.data | default([]) | map(attribute='id') | list) ==
+    ['qwen3.8-flash-next-' ~ ('unsloth-' if strata_default_model == 'UD-IQ4_XS' else '') ~ (strata_default_model | lower)] and
+    (strata_ready.json.data | default([]) | map(attribute='meta.n_ctx', default=0) | list) ==
+    [strata_context | int]
+  retries: 180
+  delay: 10
+  when: strata_start_service | bool and not ansible_check_mode
+
+- name: Verify IQ3_S default output budget
+  ansible.builtin.uri:
+    url: http://127.0.0.1:8080/settings
+  register: strata_shared_settings
+  failed_when: strata_shared_settings.json.defaults.max_tokens | default(0) | int != strata_output_tokens | int
+  when: strata_start_service | bool and strata_default_model == 'IQ3_S' and not ansible_check_mode
+
+- name: Verify IQ3_S conversation cache
+  ansible.builtin.uri:
+    url: http://127.0.0.1:8080/metrics
+  register: strata_runtime_metrics
+  failed_when: >-
+    strata_runtime_metrics.json.engine.kv | default('') != (strata_kv | default('q4_0')) or
+    not (strata_runtime_metrics.json.conversation_cache.enabled | default(false)) or
+    strata_runtime_metrics.json.conversation_cache.budget_mib | default(0) | int != strata_conversation_cache_mib | int
+  when: strata_start_service | bool and strata_default_model == 'IQ3_S' and not ansible_check_mode
+
+- name: Verify IQ3_S serving slots
+  ansible.builtin.uri:
+    url: http://127.0.0.1:8080/v1/status
+  register: strata_slot_status
+  failed_when: strata_slot_status.json.concurrency.serving | default(0) | int != strata_parallel | int
+  when: strata_start_service | bool and strata_default_model == 'IQ3_S' and not ansible_check_mode

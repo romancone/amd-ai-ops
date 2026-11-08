@@ -11,6 +11,7 @@ and settings. Generic dependencies and AMD-specific dependencies stay separate.
 | ROCm cleanup (optional) | [cleanup.md](cleanup.md) | [cleanup.yml](cleanup.yml) |
 | Generic tools, Vulkan, HIP and ROCm PyTorch | [rocm.md](rocm.md) | [site.yml](site.yml) |
 | llama.cpp with Vulkan and HIP, Gemma 4 12B | [llama.md](llama.md) | [llama.yml](llama.yml) |
+| Strata local inference ([results](reports/strata.html)) | [strata.md](strata.md) | [strata.yml](strata.yml) |
 
 The base uses Ubuntu packages and the existing distribution `amdgpu` driver.
 The llama.cpp recipe builds the selected GPU backend and runs one model service.

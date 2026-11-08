@@ -328,5 +328,3 @@ The widget uses the latest selected result; a failed fill has no continuation
 TTFT or TG. Passed Long records must include cached history, 512 new tokens,
 128 output tokens, TTFT and decode throughput. Imports reject contexts above
 the model limit. BENCHMARK.md is regenerated automatically.
-
-Remaining measurements: [pending evaluations](PENDING.md).

@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Strata model benchmarks · AMD AI Ops</title>
+<link rel="stylesheet" href="index.css">
+<script src="benchmark-data.js"></script>
+<script src="strata.js" defer></script>
+</head>
+<body>
+<main class="mtp">
+<nav class="report-nav" aria-label="Reports"><a href="index.html">Model benchmarks with real prompts</a><a href="llama-bench.html">Model benchmarks with llama-bench</a><a href="strata.html" aria-current="page">Strata model benchmarks</a></nav>
+<h1>Strata model benchmarks</h1>
+<h2>1. Coding test settings</h2>
+<p>We asked each model to write a program that reports GPU activity, memory use and temperature.</p>
+<p class="sub" id="hardware"></p>
+<p id="settings"></p>
+<details>
+<summary>Show the short-prompt API request</summary>
+<label for="request-model" id="request-label" hidden>Model quant</label>
+<select id="request-model" hidden></select>
+<pre id="evaluation-call" style="overflow:auto"></pre>
+</details>
+<p>Sampling follows the thinking-mode recommendations from <a href="https://huggingface.co/unsloth/Qwen3.8-Flash-Next-GGUF#best-practices">Unsloth</a> and <a href="https://huggingface.co/Qwen/Qwen3.8-Flash-Next#best-practices">Qwen</a>. <span id="output-budget"></span></p>
+<h2>2. Coding test results</h2>
+<div id="verified-results" hidden>
+<p><strong>TTFT</strong> is the wait for the first reasoning token. <strong>Answer starts</strong> is the wait for final-answer text. <strong>Decode</strong> counts reasoning and answer tokens, excluding prompt processing.</p>
+<div class="table-wrap">
+<table>
+<thead>
+<tr><th>Model quant</th><th>KV cache</th><th>Experts</th><th>TTFT s</th><th>Answer starts s</th><th>Total request s</th><th>Decode t/s</th><th>Peak service RAM GiB</th><th>Peak recorded VRAM GiB</th></tr>
+</thead>
+<tbody id="results"></tbody>
+</table>
+</div>
+<p id="validation-note"></p>
+<p>IQ4 required SSD reads during inference and is included only as a speed reference.</p>
+<h2>3. Output result evaluation</h2>
+<p>On the 109-token prompt, IQ2_XS was fastest at <span id="iq2-decode"></span> decode tokens/s.</p>
+<div class="table-wrap">
+<table>
+<thead>
+<tr><th>Quant</th><th>KV cache</th><th>Decode t/s</th><th>Problem in the generated code</th><th>Verified fix</th></tr>
+</thead>
+<tbody id="exporter-repairs"></tbody>
+</table>
+</div>
+<div class="card"><strong>Near-256K coding test · IQ3_S</strong>
+<p id="long-coding-method"></p>
+<ul id="long-coding-results"></ul>
+<p><strong>Choose q4_0 when two users need 256K each.</strong> It produced working code in the single-slot test. See the <a href="#two-user-capacity">two-slot capacity check</a>.</p></div>
+</div>
+<h2>4. Single-user capacity and limits · 1 × 256K</h2>
+<p id="conversation-method"></p>
+<div class="table-wrap">
+<table>
+<thead>
+<tr><th>Cache budget</th><th>Return to chat</th><th>Follow-up tokens</th><th>Tokens reused</th><th>TTFT s</th><th>Peak service RAM GiB</th></tr>
+</thead>
+<tbody id="conversation-results"></tbody>
+</table>
+</div>
+<div class="card"><strong>One active user · 256K context · INT8 KV</strong><p id="conversation-limit"></p></div>
+<details>
+<summary>What happens when you switch between chats?</summary>
+<p>A single slot served one request at a time as the client switched histories. The first two runs kept the same host RAM limits (50G high, 56G max) to compare cache sizes. At 1 GiB, the cache had too little room for B. At 2 GiB, Strata was 743 MiB short of the free RAM it required to save B.</p>
+<div class="table-wrap"><table>
+<thead><tr><th>Cache</th><th>High/max GiB</th><th>A tokens reused</th><th>A TTFT s</th><th>B tokens reused</th><th>B TTFT s</th><th>Peak service RAM GiB</th></tr></thead>
+<tbody id="ab-results"></tbody>
+</table></div>
+<p>With 51G high and 52G max, both chats were restored. No expert SSD reads were detected in that run.</p>
+</details>
+<h2 id="two-user-capacity">5. Two simultaneous users: capacity and limits</h2>
+<p>Each user gets a separate context. Both share a 2 GiB conversation cache. The table shows two short requests running together with batch MTP off.</p>
+<div class="table-wrap"><table>
+<thead><tr><th>Context per user</th><th>KV cache</th><th>A TTFT s</th><th>A decode t/s</th><th>B TTFT s</th><th>B decode t/s</th><th>Total output t/s</th></tr></thead>
+<tbody id="larger-contexts"></tbody>
+</table></div>
+<div class="cards">
+<div class="card"><strong>128K per user · INT8 KV</strong><p>Fastest combined output on short requests.</p></div>
+<div class="card"><strong>192K per user · INT8 KV</strong><p>More room for code and chat history at the same cache precision.</p></div>
+<div class="card"><strong>Default · 256K per user · q4_0 KV</strong><p>Two IQ3_S slots share a 2 GiB conversation cache. Each request defaults to 16K output. The service leaves 10 GiB of RAM for the OS.</p></div>
+</div>
+<details><summary>Full histories, saved chats and memory limits</summary>
+<p id="two-slot-capacity"></p>
+<p id="largest-cold"></p>
+<p id="two-slot-resume"></p>
+<p><strong>Why 2 × 256K with INT8 failed.</strong> The slot buffers used 7.31 GiB of GPU memory. Only 122 MiB remained for the output head. <span id="streamed-kv-capacity"></span></p>
+</details>
+<h2>6. Batch MTP with two users</h2>
+<div class="note"><strong>Keep batch MTP off.</strong> At 2 × 128K with INT8 KV and a 2 GiB conversation cache, enabling it gave almost the same total speed. Both users generated at the same time in either mode.</div>
+<p>Each user generated 128 tokens. Total output t/s includes prompt reading.</p>
+<div class="table-wrap"><table>
+<thead><tr><th>Measurement</th><th>Batch MTP off</th><th>Batch MTP on</th></tr></thead>
+<tbody id="two-slot-results"></tbody>
+</table></div>
+<p id="two-slot-throughput"></p>
+<p><a href="../strata.md">Installation and local API access</a> · <a href="https://github.com/Niko1221/Strata/blob/main/docs/MODELS.md">Strata model support</a></p>
+</main>
+</body>
+</html>

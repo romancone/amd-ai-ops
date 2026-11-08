@@ -46,3 +46,11 @@ llama_ubatch: 1152
 llama_image_min_tokens: 70  # Gemma BF16 image profile
 llama_image_max_tokens: 1120
 # Profiles for 1, 2 and 4 users: MODELS.md
+
+strata_default_model: IQ3_S  # Prepare and serve
+# strata_models: [IQ3_S, IQ2_XS]  # Also prepare IQ2_XS
+strata_context: 262144  # Per user
+# strata_kv: q4_0  # IQ3_S default; other models use int8
+strata_parallel: 2  # Single-slot alternative: 1
+strata_conversation_cache_mib: 2048
+strata_output_tokens: 16384

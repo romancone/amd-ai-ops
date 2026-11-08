@@ -13,11 +13,12 @@ formatting. This file owns the repository layout, role behavior and Step Map.
 | [README.md](README.md) | Quick starts, compatibility, acceptance criteria and a short changelog |
 | [MODELS.md](MODELS.md) | Model descriptions, file sizes and complete Ansible/Runme profiles for every model, including the current default |
 | [BENCHMARK.md](BENCHMARK.md) | Generated benchmark summary from `reports/benchmark-data.js`; regenerate with `python3 evaluation/build_report.py --markdown` |
-| [reports/](reports/) | `benchmark-data.js` owns configurations, measurements and image answers; catalog entries reference those records. Imports retain prior attempts; model aliases share stable selection keys. `benchmark-view.js` resolves references for both pages. `index.html` owns the comparison widget, capacity picks and MTP image viewer; `llama-bench.html` displays model benchmarks and saved image answers. `index.css` styles both pages |
+| [reports/](reports/) | `benchmark-data.js` owns configurations, measurements and image answers; catalog entries reference those records. Imports retain prior attempts; model aliases share stable selection keys. `benchmark-view.js` resolves references for both pages. `index.html` owns the comparison widget, capacity picks and MTP image viewer; `llama-bench.html` displays model benchmarks and saved image answers. `strata.html` uses the same dataset; diagnostic Strata runs are retained but excluded from public comparisons. `index.css` styles all report pages |
 | [evaluation/](evaluation/) / [evaluation.yml](evaluation.yml) | Evaluation runner, scoring inputs and structured importers; `build_report.py` imports results, `report_data.py` merges/stores records and exports BENCHMARK.md. HTML pages are hand-maintained; raw logs stay outside the repository |
 | [cleanup.md](cleanup.md) / [cleanup.yml](cleanup.yml) | Optional ROCm cleanup |
 | [rocm.md](rocm.md) / [site.yml](site.yml) | Generic development tools, then AMD libraries |
 | [llama.md](llama.md) / [llama.yml](llama.yml) | Current default model recipe and role entry point; alternatives link to MODELS.md |
+| [strata.md](strata.md) / [strata.yml](strata.yml) | Strata deployment is defined by the [Ansible role](roles/strata/). Runme uses the same upstream setup options and systemd unit. The optional integrity check covers restored weights. The [coding prompt](tests/strata/README.md) and [Strata report](reports/strata.html) document the evaluation |
 | [roles/](roles/) | Source of truth for task order, supported settings, service arguments and verification |
 | [ansible.cfg](ansible.cfg) / [hosts.example.ini](hosts.example.ini) | Select ignored `./hosts` inventory / provide its template |
 | [group_vars/all.yml](group_vars/all.yml) | Default SSH user |

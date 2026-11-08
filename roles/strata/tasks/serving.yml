@@ -1,0 +1,51 @@
+---
+# args_written belongs to upstream setup. user_args carries operator overrides across rebuilds.
+- name: Set conversation cache and remove obsolete slot overrides
+  vars:
+    config: "{{ strata_config_file.content | b64decode | from_json }}"
+    options_with_values: [--batch, --slots, --conversation-cache-slots, --conversation-cache-mib]
+    managed: "{{ options_with_values + ['--batch-mtp'] }}"
+    args_patch: >-
+      {%- set patch = {} -%}
+      {%- for key in ['args', 'user_args'] -%}
+        {%- set flags = config.get(key, []) -%}
+        {%- set keep = [] -%}
+        {%- for flag in flags -%}
+          {%- if flag.split('=')[0] not in managed and (loop.first or flags[loop.index0 - 1] not in options_with_values) -%}
+            {%- set _ = keep.append(flag) -%}
+          {%- endif -%}
+        {%- endfor -%}
+        {%- set _ = patch.update({key: keep + ['--conversation-cache-mib', strata_conversation_cache_mib | string]}) -%}
+      {%- endfor -%}
+      {{ patch }}
+    settings: "{{ config | combine(args_patch, {'env': {'STRATA_BATCH_MTP': '0'}}, recursive=true) }}"
+  ansible.builtin.copy:
+    content: "{{ settings | to_nice_json }}\n"
+    dest: '{{ strata_config }}'
+    owner: '{{ strata_user }}'
+    group: '{{ strata_user }}'
+  when: settings != config
+  notify: Restart selected Strata instance
+
+- name: Inspect Strata shared settings
+  ansible.builtin.stat:
+    path: '{{ strata_source }}/strata-iq3_s.shared-settings.json'
+  register: strata_shared_file
+
+- name: Read existing Strata shared settings
+  ansible.builtin.slurp:
+    src: '{{ strata_shared_file.stat.path }}'
+  register: strata_shared_json
+  when: strata_shared_file.stat.exists
+
+- name: Set the default output budget
+  vars:
+    current: "{{ (strata_shared_json.content | b64decode | from_json) if strata_shared_file.stat.exists else {} }}"
+  ansible.builtin.copy:
+    content: "{{ current | combine({'max_tokens': strata_output_tokens | int}) | to_nice_json }}\n"
+    dest: '{{ strata_source }}/strata-iq3_s.shared-settings.json'
+    owner: '{{ strata_user }}'
+    group: '{{ strata_user }}'
+    mode: '0600'
+  when: current.get('max_tokens') != strata_output_tokens | int
+  notify: Restart selected Strata instance
